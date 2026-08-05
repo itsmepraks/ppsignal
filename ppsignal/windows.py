@@ -9,6 +9,6 @@ def hann(M, sym=True):
     length = index(M)
     if length < 0:
         raise ValueError("M must be non-negative")
-    if not sym:
-        raise NotImplementedError("periodic Hann is not implemented")
+    if not sym and length > 1:
+        return _hann(np.empty(length + 1, dtype=np.float64))[:-1]
     return _hann(np.empty(length, dtype=np.float64))
