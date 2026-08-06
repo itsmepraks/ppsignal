@@ -1,3 +1,4 @@
+import sys
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 
@@ -7,7 +8,7 @@ from postpyc.build import build_file
 import ppsignal._windows as windows
 
 
-def test_compiled_hann_matches_interpreted(tmp_path):
+def test_compiled_hann_matches_interpreted_and_public(tmp_path, monkeypatch):
     name = "ppsignal_windows_native_test"
     extension = build_file(
         Path(windows.__file__),
@@ -30,3 +31,33 @@ def test_compiled_hann_matches_interpreted(tmp_path):
             rtol=1e-14,
             atol=1e-15,
         )
+
+    monkeypatch.setitem(sys.modules, "ppsignal._windows", native)
+
+    public_name = "ppsignal_windows_public_test"
+    public_spec = spec_from_file_location(
+        public_name, Path(windows.__file__).with_name("windows.py")
+    )
+    public = module_from_spec(public_spec)
+    public_spec.loader.exec_module(public)
+
+    assert public._hann is native.hann
+
+    np.testing.assert_allclose(
+        public.hann(5),
+        [0.0, 0.5, 1.0, 0.5, 0.0],
+        rtol=1e-14,
+        atol=1e-15,
+    )
+    np.testing.assert_allclose(
+        public.hann(5, sym=False),
+        [
+            0.0,
+            0.3454915028125263,
+            0.9045084971874737,
+            0.9045084971874737,
+            0.3454915028125263,
+        ],
+        rtol=1e-14,
+        atol=1e-15,
+    )
