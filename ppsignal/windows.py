@@ -6,6 +6,28 @@ from ppsignal._windows import hann as _hann
 
 
 def hann(M, sym=True):
+    """Return a Hann window.
+
+    Parameters
+    ----------
+    M : int
+        Number of values in the returned window. M must be non-negative.
+    sym : bool, default: True
+        If True, return a symmetric window for filter design.
+        If False, return a periodic window for spectral analysis.
+
+    Returns
+    -------
+    numpy.ndarray
+        One-dimensional Hann window with the numpy.float64 data type.
+
+    Raises
+    ------
+    ValueError
+        M is negative.
+    TypeError
+        M is not an integer.
+    """
     length = index(M)
     if length < 0:
         raise ValueError("M must be non-negative")
