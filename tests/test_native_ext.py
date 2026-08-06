@@ -1,11 +1,17 @@
+import shutil
 import sys
+from importlib.machinery import EXTENSION_SUFFIXES
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 
 import numpy as np
+import pytest
 from postpyc.build import build_file
 
 import ppsignal._windows as windows
+
+cc = shutil.which("cc") or shutil.which("clang") or shutil.which("gcc")
+pytestmark = pytest.mark.skipif(cc is None, reason="No C compiler available")
 
 
 def test_compiled_hann_matches_interpreted_and_public(tmp_path, monkeypatch):
@@ -14,7 +20,7 @@ def test_compiled_hann_matches_interpreted_and_public(tmp_path, monkeypatch):
         Path(windows.__file__),
         ext_module=True,
         module_name=name,
-        output=tmp_path / f"{name}.so",
+        output=tmp_path / f"{name}{EXTENSION_SUFFIXES[0]}",
     )
     spec = spec_from_file_location(name, extension)
     native = module_from_spec(spec)
