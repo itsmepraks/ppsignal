@@ -23,6 +23,7 @@ EXPECTED_SDIST_MEMBERS = {
     "tests/test_windows.py",
     "tests/test_native_ext.py",
     "README.md",
+    "ROADMAP.md",
     "pyproject.toml",
     "scripts/build_native.py",
     "scripts/build_ext.py",
@@ -154,3 +155,64 @@ def test_isolated_wheel_import_without_pip(distributions, tmp_path):
         cwd=tmp_path,
         check=True,
     )
+
+
+def test_roadmap_records_targets_and_compiler_gaps():
+    roadmap = (ROOT / "ROADMAP.md").read_text()
+
+    accuracy_section = roadmap[
+        roadmap.index("## Accuracy target"):roadmap.index("## Completed")
+    ]
+    assert "1e-14" in accuracy_section
+
+    completed_section = roadmap[
+        roadmap.index("## Completed"):roadmap.index("## Next windows")
+    ]
+    assert "Hann" in completed_section
+
+    next_section = roadmap[
+        roadmap.index("## Next windows"):roadmap.index("## Deferred work")
+    ]
+    next_windows = ["boxcar", "hamming", "blackman", "bartlett", "triang"]
+    positions = [next_section.index(name) for name in next_windows]
+    assert positions == sorted(positions)
+
+    deferred_section = roadmap[
+        roadmap.index("## Deferred work"):roadmap.index("## Compiler gaps")
+    ]
+    assert "kaiser" in deferred_section
+    assert "computed output" in deferred_section
+
+    compiler_section = roadmap[roadmap.index("## Compiler gaps"):]
+    assert "postpython issue" in compiler_section
+
+
+def test_readme_has_current_package_commands():
+    readme = (ROOT / "README.md").read_text()
+
+    assert "Alpha" in readme
+    assert "from ppsignal.windows import hann" in readme
+    assert "hann(5)" in readme
+    assert "sym=False" in readme
+
+    install_section = readme[
+        readme.index("## Install"):readme.index("## Use Hann")
+    ]
+    assert "do not compile native code" in install_section
+    assert "ppsignal_native" in install_section
+    assert "ppsignal` uses" in install_section
+    assert "the interpreted Hann kernel" in install_section
+
+    develop_section = readme[
+        readme.index("## Develop"):readme.index("## Working rules (summary)")
+    ]
+
+    assert "pixi install -e dev" in develop_section
+    assert "pixi run -e dev test" in develop_section
+    assert "pixi run -e dev build-dist" in develop_section
+    assert "pixi run build-native" in develop_section
+    assert "pixi run build-ext" in develop_section
+    assert "pixi run build-prefix" in develop_section
+
+    assert "docs/spec.md" in readme
+    assert "postscipy-roadmap.md" in readme

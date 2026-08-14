@@ -3,59 +3,68 @@
 Signal processing kernels, in POST Python.
 
 `ppsignal` reimplements `scipy.signal` in
-[POST Python](https://github.com/openteams-ai/postpython) — every kernel is
-fully-typed Python that runs under the standard CPython interpreter **and**
-compiles ahead-of-time to native code (a plain C shared library and a NumPy
-ufunc extension module) with the POST Python reference compiler.
+[POST Python](https://github.com/openteams-ai/postpython). Each kernel runs
+under the standard CPython interpreter. Each kernel can also compile ahead
+of time into two native formats: a plain C shared library and a NumPy
+ufunc extension.
 
-Status: **Planning** — this repository is scaffolding, ready for an agent or
-contributor to claim. It is part of the
+Status: **Alpha**. The package has one complete window function, Hann, with
+an interpreted path and a native path. It is part of the
 [PostSciPy effort](https://github.com/openteams-ai/postpython/blob/main/postscipy-roadmap.md)
-to rebuild SciPy one subpackage at a time as the compiler's proving ground.
+to rebuild SciPy one subpackage at a time, as the compiler's proving ground.
 
-Primary compiler pressure this package generates: recurrence gufuncs, window kernels, cross-package dependency on ppspecial.
+See [ROADMAP.md](ROADMAP.md) for the accuracy target, the next windows, and
+the deferred work.
 
-## Start here
+## Install
 
-1. Read the [POST Python spec](https://github.com/openteams-ai/postpython/blob/main/docs/spec.md)
-   and the [PostSciPy roadmap](https://github.com/openteams-ai/postpython/blob/main/postscipy-roadmap.md)
-   (package map, working rules, capability matrix).
-2. Copy the layout of [ppspecial](https://github.com/openteams-ai/ppspecial),
-   the exemplar package: `ppsignal/` sources, `tests/`,
-   `scripts/build_native.py`, `scripts/build_ext.py`, a pixi workspace with
-   `test` / `build-native` / `build-ext` tasks, a git dependency on
-   postpython, and a `ROADMAP.md` tracking targets and upstream requests.
-3. Start with a slice from "Compiles today" below; land it as a small PR with
-   tests in both execution modes.
+```bash
+python -m pip install .
+```
 
-## First slices
+Installation and import do not compile native code. Unless
+`ppsignal_native` is available on Python's import path, `ppsignal` uses
+the interpreted Hann kernel.
 
-### Compiles today
+## Use Hann
 
-- Window functions as gufuncs `(n)->(n)` or generators: boxcar, triang, bartlett, hann, hamming, blackman, cosine; `kaiser` via ppspecial's `i0` (cross-package dependency)
-- `lfilter` as a direct-form II transposed recurrence gufunc `(b),(a),(n)->(n)`
-- `sosfilt` with per-section state carried in an output workspace parameter
-- `unit_impulse`, simple `detrend`
+```python
+from ppsignal.windows import hann
 
-### Blocked on compiler capabilities
+symmetric = hann(5)
+periodic = hann(5, sym=False)
+```
 
-File these as [postpython issues](https://github.com/openteams-ai/postpython/issues)
-with minimal reproducers when you start on them — the filing is part of the
-work and drives the compiler roadmap.
+`hann(M)` returns a symmetric window, for filter design. `hann(M,
+sym=False)` returns a periodic window, for spectral analysis.
 
-- General `convolve`/`correlate` — output length n+m-1 is a computed core dimension, which the gufunc signature algebra cannot express (NumPy shares this limit); needs a design decision or the C-ABI path
-- Filter design (`butter`, `cheby1`, ...) — needs complex polynomial root finding (pplinalg/ppfft maturity)
+## Develop
+
+```bash
+pixi install -e dev
+pixi run -e dev test
+pixi run -e dev build-dist
+pixi run build-native
+pixi run build-ext
+pixi run build-prefix
+```
+
+`pixi run build-native` creates the plain Hann library, a C header, and an
+ABI manifest. `pixi run build-ext` builds the NumPy extension for Hann and
+verifies that Hann is a ufunc. Neither command installs the extension into
+the package.
 
 ## Working rules (summary)
 
-- Pure POST Python: no compiler-specific escape hatches; every kernel runs
-  interpreted and compiled.
-- `scipy` is the reference, never a runtime dependency. Tests may use it
-  optionally; prefer deterministic hardcoded reference values.
-- Compiler gaps go upstream as postpython issues with reproducers, not
-  silent workarounds.
+- Pure POST Python: every kernel runs the same source, interpreted and
+  compiled. Do not add code for one compiler only.
+- SciPy is the reference. SciPy is never a runtime dependency. Tests can use
+  it as an optional check. Prefer fixed reference values.
+- If you find a compiler limitation, report it as a postpython issue with a
+  reproducer. Do not add a production workaround for a compiler limitation.
 - Verify against a postpython checkout on `main`.
-- Document accuracy targets and reference sources per function.
+- Document the accuracy target and the reference source for each function.
 
-The full rules and the definition of done live in the
-[PostSciPy roadmap](https://github.com/openteams-ai/postpython/blob/main/postscipy-roadmap.md).
+Read the [POST Python spec](https://github.com/openteams-ai/postpython/blob/main/docs/spec.md)
+and the [PostSciPy roadmap](https://github.com/openteams-ai/postpython/blob/main/postscipy-roadmap.md)
+for the full rules and the definition of done.
