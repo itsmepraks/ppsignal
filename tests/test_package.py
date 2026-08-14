@@ -90,6 +90,53 @@ def test_sdist_contains_expected_source_files(distributions):
     assert EXPECTED_SDIST_MEMBERS <= relative_members
 
 
+def test_pixi_configuration_has_supported_platforms_and_tasks():
+    data = tomllib.loads((ROOT / "pyproject.toml").read_text())
+
+    pixi = data["tool"]["pixi"]
+
+    assert pixi["workspace"]["channels"] == ["conda-forge"]
+    assert pixi["workspace"]["platforms"] == [
+        "osx-arm64",
+        "osx-64",
+        "linux-64",
+        "linux-aarch64",
+        "win-64",
+    ]
+
+    assert pixi["pypi-dependencies"]["ppsignal"] == {"path": ".", "editable": True}
+
+    assert pixi["dependencies"]["python"] == ">=3.10"
+    assert pixi["dependencies"]["c-compiler"] == "*"
+
+    dev_dependencies = pixi["feature"]["dev"]["dependencies"]
+    assert dev_dependencies["pytest"] == ">=7"
+    assert dev_dependencies["numpy"] == "*"
+
+    dev_pypi_dependencies = pixi["feature"]["dev"]["pypi-dependencies"]
+    assert dev_pypi_dependencies["build"] == ">=1.2"
+
+    assert pixi["environments"]["default"] == {"solve-group": "default"}
+    assert pixi["environments"]["dev"] == {
+        "features": ["dev"],
+        "solve-group": "default",
+    }
+
+    tasks = pixi["tasks"]
+    expected_commands = {
+        "test": "pytest tests/",
+        "build-dist": "python -m build",
+        "build-native": "python scripts/build_native.py",
+        "build-ext": "python scripts/build_ext.py",
+        "build-prefix": (
+            "postpyc build ppsignal/_windows.py --prefix dist/prefix "
+            "--module-name ppsignal"
+        ),
+    }
+    for task, cmd in expected_commands.items():
+        assert tasks[task]["cmd"] == cmd
+
+
 def test_isolated_wheel_import_without_pip(distributions, tmp_path):
     wheel = next(distributions.glob("*.whl"))
     target = tmp_path / "extracted-wheel"
