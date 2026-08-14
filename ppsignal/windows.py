@@ -2,7 +2,12 @@ from operator import index
 
 import numpy as np
 
-from ppsignal._windows import hann as _hann
+try:
+    from ppsignal_native import hann as _hann
+except ModuleNotFoundError as exc:
+    if exc.name != "ppsignal_native":
+        raise
+    from ppsignal._windows import hann as _hann
 
 
 def hann(M, sym=True):

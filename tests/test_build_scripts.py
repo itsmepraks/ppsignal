@@ -135,8 +135,16 @@ def test_build_ext_emits_importable_hann_ufunc(tmp_path):
     assert artifact.is_file()
 
     spec = importlib.util.spec_from_file_location("ppsignal_native", artifact)
+    _MISSING = object()
+    prior_ppsignal_native = sys.modules.get("ppsignal_native", _MISSING)
     module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        if prior_ppsignal_native is _MISSING:
+            sys.modules.pop("ppsignal_native", None)
+        else:
+            sys.modules["ppsignal_native"] = prior_ppsignal_native
     assert isinstance(module.hann, np.ufunc)
     assert module.hann.signature == "(n)->(n)"
     np.testing.assert_allclose(
