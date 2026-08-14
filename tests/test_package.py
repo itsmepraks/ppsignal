@@ -24,6 +24,9 @@ EXPECTED_SDIST_MEMBERS = {
     "tests/test_native_ext.py",
     "README.md",
     "pyproject.toml",
+    "scripts/build_native.py",
+    "scripts/build_ext.py",
+    "tests/test_build_scripts.py",
 }
 
 
