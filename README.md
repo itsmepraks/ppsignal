@@ -13,9 +13,6 @@ an interpreted path and a native path. It is part of the
 [PostSciPy effort](https://github.com/openteams-ai/postpython/blob/main/postscipy-roadmap.md)
 to rebuild SciPy one subpackage at a time, as the compiler's proving ground.
 
-See [ROADMAP.md](ROADMAP.md) for the accuracy target, the next windows, and
-the deferred work.
-
 ## Install
 
 ```bash
