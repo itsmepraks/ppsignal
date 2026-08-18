@@ -47,6 +47,11 @@ window = boxcar(5)
 
 The sym argument does not change Boxcar values.
 
+The accuracy target is exact numpy.float64 ones.
+
+The reference source is `scipy.signal.windows.boxcar`. See
+https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.windows.boxcar.html.
+
 ## Develop
 
 ```bash

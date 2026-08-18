@@ -53,6 +53,28 @@ def test_public_wrapper_falls_back_to_interpreted_windows_when_native_module_is_
     subprocess.run([sys.executable, "-c", script], check=True)
 
 
+def test_public_wrapper_uses_interpreted_boxcar_when_native_module_lacks_it():
+    script = textwrap.dedent(
+        """
+        import sys
+        import types
+
+        native = types.ModuleType("ppsignal_native")
+        native.hann = lambda values: "native-hann"
+        sys.modules["ppsignal_native"] = native
+
+        import ppsignal._windows as interpreted
+        import ppsignal.windows as windows
+
+        assert windows._hann is native.hann
+        assert windows.hann(3) == "native-hann"
+        assert windows._boxcar is interpreted.boxcar
+        assert windows.boxcar(3).tolist() == [1.0, 1.0, 1.0]
+        """
+    )
+    subprocess.run([sys.executable, "-c", script], check=True)
+
+
 def test_public_wrapper_reraises_missing_dependency_from_native_module():
     script = textwrap.dedent(
         """

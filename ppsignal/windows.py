@@ -2,14 +2,19 @@ from operator import index
 
 import numpy as np
 
+from ppsignal._windows import boxcar as _interpreted_boxcar
+from ppsignal._windows import hann as _interpreted_hann
+
 try:
-    from ppsignal_native import boxcar as _boxcar
-    from ppsignal_native import hann as _hann
+    import ppsignal_native as _native
 except ModuleNotFoundError as exc:
     if exc.name != "ppsignal_native":
         raise
-    from ppsignal._windows import boxcar as _boxcar
-    from ppsignal._windows import hann as _hann
+    _boxcar = _interpreted_boxcar
+    _hann = _interpreted_hann
+else:
+    _boxcar = getattr(_native, "boxcar", _interpreted_boxcar)
+    _hann = getattr(_native, "hann", _interpreted_hann)
 
 
 def boxcar(M, sym=True):

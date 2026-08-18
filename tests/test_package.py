@@ -293,6 +293,8 @@ def test_readme_has_current_package_commands():
     assert "all ones" in boxcar_section
     assert "sym" in boxcar_section
     assert "does not change" in boxcar_section
+    assert "exact numpy.float64 ones" in boxcar_section
+    assert "scipy.signal.windows.boxcar" in boxcar_section
 
     develop_section = readme[
         readme.index("## Develop"):readme.index("## Working rules (summary)")
