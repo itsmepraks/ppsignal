@@ -1,9 +1,12 @@
 name: CI
 
-on:
+"on":
   push:
     branches: [main]
   pull_request:
+
+permissions:
+  contents: read
 
 jobs:
   interpreted:
@@ -47,6 +50,8 @@ jobs:
   distribution:
     name: Distribution build and tests
     runs-on: ubuntu-latest
+    env:
+      PPSIGNAL_DIST_DIR: dist
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
