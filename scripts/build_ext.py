@@ -1,4 +1,4 @@
-"""Build and smoke-test the Hann NumPy extension module."""
+"""Build and smoke-test the window NumPy extension module."""
 
 import importlib.util
 import os
@@ -37,11 +37,12 @@ def main() -> int:
         print("  " + "\n  ".join(str(error).splitlines()[:8]))
         return 1
 
-    if not isinstance(getattr(module, "hann", None), np.ufunc):
-        print("extension build FAILED: hann is not a NumPy ufunc")
-        return 1
+    for name in ("hann", "boxcar"):
+        if not isinstance(getattr(module, name, None), np.ufunc):
+            print(f"extension build FAILED: {name} is not a NumPy ufunc")
+            return 1
     print(f"built {built}")
-    print("registered Hann ufunc")
+    print("registered Hann and Boxcar ufuncs")
     return 0
 
 

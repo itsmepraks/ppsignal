@@ -1,4 +1,4 @@
-"""Compile the Hann kernel as a plain shared library with C ABI sidecars."""
+"""Compile the window kernels as a plain shared library with C ABI sidecars."""
 
 import os
 import sys
@@ -30,7 +30,7 @@ def main() -> int:
         print("  " + "\n  ".join(str(error).splitlines()[:8]))
         return 1
 
-    print(f"built hann library: {library}")
+    print(f"built hann and boxcar library: {library}")
     print(f"built C header: {library.with_suffix('.h')}")
     print(f"built ABI manifest: {library.with_suffix('.json')}")
     return 0

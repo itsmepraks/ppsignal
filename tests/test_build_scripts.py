@@ -28,15 +28,15 @@ class _POSTArray(ctypes.Structure):
     ]
 
 
-def _call_pp_hann(library_path, length):
+def _call_pp_window(library_path, symbol, length):
     lib = ctypes.CDLL(str(library_path))
-    pp_hann = lib.pp_hann
-    pp_hann.argtypes = [
+    pp_window = getattr(lib, symbol)
+    pp_window.argtypes = [
         ctypes.POINTER(_POSTArray),
         ctypes.POINTER(_POSTArray),
         ctypes.c_int64,
     ]
-    pp_hann.restype = None
+    pp_window.restype = None
 
     shape_buf = (ctypes.c_double * length)()
     out_buf = (ctypes.c_double * length)()
@@ -54,7 +54,7 @@ def _call_pp_hann(library_path, length):
 
     shape_view = _view(shape_buf)
     out_view = _view(out_buf)
-    pp_hann(ctypes.byref(shape_view), ctypes.byref(out_view), ctypes.c_int64(length))
+    pp_window(ctypes.byref(shape_view), ctypes.byref(out_view), ctypes.c_int64(length))
     return list(out_buf)
 
 
@@ -93,6 +93,7 @@ def test_build_native_emits_library_header_and_manifest(tmp_path):
     )
 
     assert "hann" in result.stdout
+    assert "boxcar" in result.stdout
     assert (tmp_path / "ppsignal_windows.so").is_file()
     assert (tmp_path / "ppsignal_windows.h").is_file()
     assert (tmp_path / "ppsignal_windows.json").is_file()
@@ -105,10 +106,16 @@ def test_build_native_emits_library_header_and_manifest(tmp_path):
     assert hann_export["kind"] == "ufunc"
     assert hann_export["ufunc"]["signature"] == "(n)->(n)"
 
+    boxcar_export = exports["boxcar"]
+    assert boxcar_export["c_symbol"] == "pp_boxcar"
+    assert boxcar_export["kind"] == "ufunc"
+    assert boxcar_export["ufunc"]["signature"] == "(n)->(n)"
+
     header = (tmp_path / "ppsignal_windows.h").read_text()
     assert "pp_hann" in header
+    assert "pp_boxcar" in header
 
-    hann_values = _call_pp_hann(tmp_path / "ppsignal_windows.so", length=5)
+    hann_values = _call_pp_window(tmp_path / "ppsignal_windows.so", "pp_hann", length=5)
     np.testing.assert_allclose(
         hann_values,
         [0.0, 0.5, 1.0, 0.5, 0.0],
@@ -116,9 +123,17 @@ def test_build_native_emits_library_header_and_manifest(tmp_path):
         atol=1e-15,
     )
 
+    boxcar_values = _call_pp_window(
+        tmp_path / "ppsignal_windows.so", "pp_boxcar", length=5
+    )
+    np.testing.assert_array_equal(
+        boxcar_values,
+        [1.0, 1.0, 1.0, 1.0, 1.0],
+    )
+
 
 @requires_compiler
-def test_build_ext_emits_importable_hann_ufunc(tmp_path):
+def test_build_ext_emits_importable_window_ufuncs(tmp_path):
     env = os.environ.copy()
     env["PPSIGNAL_BUILD_DIR"] = str(tmp_path)
     result = subprocess.run(
@@ -130,7 +145,7 @@ def test_build_ext_emits_importable_hann_ufunc(tmp_path):
         text=True,
     )
 
-    assert "registered Hann ufunc" in result.stdout
+    assert "registered Hann and Boxcar ufuncs" in result.stdout
     artifact = tmp_path / f"ppsignal_native{EXTENSION_SUFFIXES[0]}"
     assert artifact.is_file()
 
@@ -152,4 +167,10 @@ def test_build_ext_emits_importable_hann_ufunc(tmp_path):
         [0.0, 0.5, 1.0, 0.5, 0.0],
         rtol=1e-14,
         atol=1e-15,
+    )
+    assert isinstance(module.boxcar, np.ufunc)
+    assert module.boxcar.signature == "(n)->(n)"
+    np.testing.assert_array_equal(
+        module.boxcar(np.zeros(5, dtype=np.float64)),
+        [1.0, 1.0, 1.0, 1.0, 1.0],
     )
