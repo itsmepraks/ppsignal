@@ -71,6 +71,6 @@ dev = { features = ["dev"], solve-group = "default" }
 [tool.pixi.tasks]
 test = { cmd = "pytest tests/", description = "Run all tests." }
 build-dist = { cmd = "python -m build", description = "Build the wheel and source distribution." }
-build-native = { cmd = "python scripts/build_native.py", description = "Build the plain Hann shared library." }
-build-ext = { cmd = "python scripts/build_ext.py", description = "Build the Hann NumPy extension." }
+build-native = { cmd = "python scripts/build_native.py", description = "Build the plain shared library containing Hann and Boxcar." }
+build-ext = { cmd = "python scripts/build_ext.py", description = "Build the NumPy extension containing Hann and Boxcar." }
 build-prefix = { cmd = "postpyc build ppsignal/_windows.py --prefix dist/prefix --module-name ppsignal", description = "Build the package-manager prefix layout." }

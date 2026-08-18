@@ -14,7 +14,7 @@ cc = shutil.which("cc") or shutil.which("clang") or shutil.which("gcc")
 pytestmark = pytest.mark.skipif(cc is None, reason="No C compiler available")
 
 
-def test_compiled_hann_matches_interpreted_and_public(tmp_path, monkeypatch):
+def test_compiled_windows_match_interpreted_and_public(tmp_path, monkeypatch):
     name = "ppsignal_windows_native_test"
     extension = build_file(
         Path(windows.__file__),
@@ -28,6 +28,8 @@ def test_compiled_hann_matches_interpreted_and_public(tmp_path, monkeypatch):
 
     assert isinstance(native.hann, np.ufunc)
     assert native.hann.signature == "(n)->(n)"
+    assert isinstance(native.boxcar, np.ufunc)
+    assert native.boxcar.signature == "(n)->(n)"
 
     for length in [0, 1, 2, 4, 5, 16]:
         shape = np.zeros(length, dtype=np.float64)
@@ -36,6 +38,13 @@ def test_compiled_hann_matches_interpreted_and_public(tmp_path, monkeypatch):
             windows.hann(shape),
             rtol=1e-14,
             atol=1e-15,
+        )
+
+    for length in [0, 1, 2, 5, 16]:
+        shape = np.zeros(length, dtype=np.float64)
+        np.testing.assert_array_equal(
+            native.boxcar(shape),
+            windows.boxcar(shape),
         )
 
     monkeypatch.setitem(sys.modules, "ppsignal._windows", native)
@@ -48,6 +57,7 @@ def test_compiled_hann_matches_interpreted_and_public(tmp_path, monkeypatch):
     public_spec.loader.exec_module(public)
 
     assert public._hann is native.hann
+    assert public._boxcar is native.boxcar
 
     np.testing.assert_allclose(
         public.hann(5),
@@ -66,4 +76,12 @@ def test_compiled_hann_matches_interpreted_and_public(tmp_path, monkeypatch):
         ],
         rtol=1e-14,
         atol=1e-15,
+    )
+    np.testing.assert_array_equal(
+        public.boxcar(5),
+        [1.0, 1.0, 1.0, 1.0, 1.0],
+    )
+    np.testing.assert_array_equal(
+        public.boxcar(5, sym=False),
+        [1.0, 1.0, 1.0, 1.0, 1.0],
     )

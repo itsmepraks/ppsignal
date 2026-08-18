@@ -3,18 +3,21 @@ import sys
 import textwrap
 
 
-def test_public_wrapper_prefers_available_native_hann():
+def test_public_wrapper_prefers_available_native_windows():
     script = textwrap.dedent(
         """
         import sys
         import types
 
         native = types.ModuleType("ppsignal_native")
+        native.boxcar = lambda values: "native-boxcar"
         native.hann = lambda values: "native-hann"
         sys.modules["ppsignal_native"] = native
 
         import ppsignal.windows as windows
 
+        assert windows._boxcar is native.boxcar
+        assert windows.boxcar(3) == "native-boxcar"
         assert windows._hann is native.hann
         assert windows.hann(3) == "native-hann"
         """
@@ -22,7 +25,7 @@ def test_public_wrapper_prefers_available_native_hann():
     subprocess.run([sys.executable, "-c", script], check=True)
 
 
-def test_public_wrapper_falls_back_to_interpreted_hann_when_native_module_is_absent():
+def test_public_wrapper_falls_back_to_interpreted_windows_when_native_module_is_absent():
     script = textwrap.dedent(
         """
         import builtins
@@ -41,8 +44,32 @@ def test_public_wrapper_falls_back_to_interpreted_hann_when_native_module_is_abs
         import ppsignal._windows as interpreted
         import ppsignal.windows as windows
 
+        assert windows._boxcar is interpreted.boxcar
+        assert windows.boxcar(3).tolist() == [1.0, 1.0, 1.0]
         assert windows._hann is interpreted.hann
         assert windows.hann(3).tolist() == [0.0, 1.0, 0.0]
+        """
+    )
+    subprocess.run([sys.executable, "-c", script], check=True)
+
+
+def test_public_wrapper_uses_interpreted_boxcar_when_native_module_lacks_it():
+    script = textwrap.dedent(
+        """
+        import sys
+        import types
+
+        native = types.ModuleType("ppsignal_native")
+        native.hann = lambda values: "native-hann"
+        sys.modules["ppsignal_native"] = native
+
+        import ppsignal._windows as interpreted
+        import ppsignal.windows as windows
+
+        assert windows._hann is native.hann
+        assert windows.hann(3) == "native-hann"
+        assert windows._boxcar is interpreted.boxcar
+        assert windows.boxcar(3).tolist() == [1.0, 1.0, 1.0]
         """
     )
     subprocess.run([sys.executable, "-c", script], check=True)
