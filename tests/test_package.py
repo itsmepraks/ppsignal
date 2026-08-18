@@ -1,3 +1,4 @@
+import os
 import subprocess
 import sys
 import tarfile
@@ -5,6 +6,7 @@ import zipfile
 from pathlib import Path
 
 import pytest
+import yaml
 
 try:
     import tomllib
@@ -42,12 +44,18 @@ def test_project_metadata_declares_source_only_package():
     assert any(dep.startswith("postpyc>=0.3.0") for dep in project["dependencies"])
     assert any(dep.startswith("postyp>=0.3.0") for dep in project["dependencies"])
 
+    dev_dependencies = project["optional-dependencies"]["dev"]
+    assert any(dep.startswith("PyYAML>=6") for dep in dev_dependencies)
+
     wheel_targets = data["tool"]["hatch"]["build"]["targets"]["wheel"]
     assert wheel_targets["packages"] == ["ppsignal"]
 
 
-@pytest.fixture(scope="module")
-def distributions(tmp_path_factory):
+def _distribution_output(tmp_path_factory):
+    configured = os.environ.get("PPSIGNAL_DIST_DIR")
+    if configured is not None:
+        return (ROOT / configured).resolve()
+
     output = tmp_path_factory.mktemp("dist")
     subprocess.run(
         [sys.executable, "-m", "build", "--outdir", str(output)],
@@ -57,9 +65,35 @@ def distributions(tmp_path_factory):
     return output
 
 
+def _single_artifact(distributions, pattern):
+    artifacts = list(distributions.glob(pattern))
+    assert len(artifacts) == 1, f"expected one {pattern} artifact, found {artifacts}"
+    return artifacts[0]
+
+
+def test_distribution_output_uses_prebuilt_artifacts(
+    monkeypatch, tmp_path, tmp_path_factory
+):
+    prebuilt = tmp_path / "prebuilt"
+    prebuilt.mkdir()
+    monkeypatch.setenv("PPSIGNAL_DIST_DIR", str(prebuilt))
+
+    def unexpected_build(*args, **kwargs):
+        pytest.fail("started a second distribution build")
+
+    monkeypatch.setattr(subprocess, "run", unexpected_build)
+
+    assert _distribution_output(tmp_path_factory) == prebuilt
+
+
+@pytest.fixture(scope="module")
+def distributions(tmp_path_factory):
+    return _distribution_output(tmp_path_factory)
+
+
 def test_build_creates_source_only_wheel_and_sdist(distributions):
-    wheel = next(distributions.glob("*.whl"))
-    sdist = next(distributions.glob("*.tar.gz"))
+    wheel = _single_artifact(distributions, "*.whl")
+    sdist = _single_artifact(distributions, "*.tar.gz")
 
     assert wheel.name.endswith("-py3-none-any.whl")
     assert sdist.name == "ppsignal-0.1.0.tar.gz"
@@ -77,7 +111,7 @@ def test_build_creates_source_only_wheel_and_sdist(distributions):
 
 
 def test_sdist_contains_expected_source_files(distributions):
-    sdist = next(distributions.glob("*.tar.gz"))
+    sdist = _single_artifact(distributions, "*.tar.gz")
 
     with tarfile.open(sdist) as archive:
         members = archive.getnames()
@@ -88,6 +122,10 @@ def test_sdist_contains_expected_source_files(distributions):
     }
 
     assert EXPECTED_SDIST_MEMBERS <= relative_members
+
+    for name in members:
+        suffix = Path(name).suffix
+        assert suffix not in NATIVE_LIBRARY_SUFFIXES, f"native library in sdist: {name}"
 
 
 def test_pixi_configuration_has_supported_platforms_and_tasks():
@@ -115,6 +153,7 @@ def test_pixi_configuration_has_supported_platforms_and_tasks():
 
     dev_pypi_dependencies = pixi["feature"]["dev"]["pypi-dependencies"]
     assert dev_pypi_dependencies["build"] == ">=1.2"
+    assert dev_pypi_dependencies["pyyaml"] == ">=6"
 
     assert pixi["environments"]["default"] == {"solve-group": "default"}
     assert pixi["environments"]["dev"] == {
@@ -137,8 +176,62 @@ def test_pixi_configuration_has_supported_platforms_and_tasks():
         assert tasks[task]["cmd"] == cmd
 
 
+def test_ci_runs_interpreted_native_and_distribution_checks():
+    workflow = yaml.safe_load(
+        (ROOT / ".github" / "workflows" / "ci.yml").read_text()
+    )
+
+    assert workflow["on"] == {
+        "push": {"branches": ["main"]},
+        "pull_request": None,
+    }
+    assert workflow["permissions"] == {"contents": "read"}
+
+    jobs = workflow["jobs"]
+    interpreted = jobs["interpreted"]
+    assert interpreted["strategy"]["matrix"]["python-version"] == [
+        "3.10",
+        "3.12",
+    ]
+    interpreted_commands = [
+        step["run"] for step in interpreted["steps"] if "run" in step
+    ]
+    assert any(
+        'python -m pip install -e ".[dev]"' in cmd for cmd in interpreted_commands
+    )
+    assert "python -m pytest tests/" in interpreted_commands
+
+    native = jobs["native"]
+    native_commands = [step["run"] for step in native["steps"] if "run" in step]
+    assert native["name"] == "Native build and tests"
+    assert native["steps"][1]["with"]["python-version"] == "3.12"
+    assert any(
+        'python -m pip install -e ".[dev]"' in cmd for cmd in native_commands
+    )
+    assert native_commands[-3:] == [
+        "python scripts/build_native.py",
+        "python scripts/build_ext.py",
+        "python -m pytest tests/test_build_scripts.py tests/test_native_ext.py",
+    ]
+
+    distribution = jobs["distribution"]
+    distribution_commands = [
+        step["run"] for step in distribution["steps"] if "run" in step
+    ]
+    assert distribution["name"] == "Distribution build and tests"
+    assert distribution["steps"][1]["with"]["python-version"] == "3.12"
+    assert distribution["env"] == {"PPSIGNAL_DIST_DIR": "dist"}
+    assert any(
+        'python -m pip install -e ".[dev]"' in cmd for cmd in distribution_commands
+    )
+    assert distribution_commands[-2:] == [
+        "python -m build",
+        "python -m pytest tests/test_package.py",
+    ]
+
+
 def test_isolated_wheel_import_without_pip(distributions, tmp_path):
-    wheel = next(distributions.glob("*.whl"))
+    wheel = _single_artifact(distributions, "*.whl")
     target = tmp_path / "extracted-wheel"
     target.mkdir()
     with zipfile.ZipFile(wheel) as archive:
