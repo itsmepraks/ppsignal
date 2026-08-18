@@ -143,6 +143,7 @@ def test_ci_runs_interpreted_suite_on_supported_python_versions():
     assert 'python-version: ["3.10", "3.12"]' in workflow
     assert 'python -m pip install -e ".[dev]"' in workflow
     assert "python -m pytest tests/" in workflow
+    assert "branches: [main]" in workflow
 
 
 def test_isolated_wheel_import_without_pip(distributions, tmp_path):
