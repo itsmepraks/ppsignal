@@ -13,7 +13,28 @@ except ModuleNotFoundError as exc:
 
 
 def boxcar(M, sym=True):
-    """Return a Boxcar window."""
+    """Return a Boxcar window.
+
+    Parameters
+    ----------
+    M : int
+        Number of values in the returned window. M must be non-negative.
+    sym : bool, default: True
+        Has no effect. The Boxcar window is the same for both the
+        symmetric and periodic case.
+
+    Returns
+    -------
+    numpy.ndarray
+        One-dimensional Boxcar window with the numpy.float64 data type.
+
+    Raises
+    ------
+    ValueError
+        M is negative.
+    TypeError
+        M is not an integer.
+    """
     length = index(M)
     if length < 0:
         raise ValueError("M must be non-negative")

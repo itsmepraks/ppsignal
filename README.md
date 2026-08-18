@@ -8,8 +8,8 @@ under the standard CPython interpreter. Each kernel can also compile ahead
 of time into two native formats: a plain C shared library and a NumPy
 ufunc extension.
 
-Status: **Alpha**. The package has one complete window function, Hann, with
-an interpreted path and a native path. It is part of the
+Status: **Alpha**. The package has two complete window functions, Hann and
+Boxcar, with an interpreted path and a native path. It is part of the
 [PostSciPy effort](https://github.com/openteams-ai/postpython/blob/main/postscipy-roadmap.md)
 to rebuild SciPy one subpackage at a time, as the compiler's proving ground.
 
@@ -21,7 +21,7 @@ python -m pip install .
 
 Installation and import do not compile native code. Unless
 `ppsignal_native` is available on Python's import path, `ppsignal` uses
-the interpreted Hann kernel.
+the interpreted window kernels.
 
 ## Use Hann
 
@@ -35,6 +35,18 @@ periodic = hann(5, sym=False)
 `hann(M)` returns a symmetric window, for filter design. `hann(M,
 sym=False)` returns a periodic window, for spectral analysis.
 
+## Use Boxcar
+
+```python
+from ppsignal.windows import boxcar
+
+window = boxcar(5)
+```
+
+`boxcar(M)` returns a window of all ones.
+
+The sym argument does not change Boxcar values.
+
 ## Develop
 
 ```bash
@@ -46,10 +58,11 @@ pixi run build-ext
 pixi run build-prefix
 ```
 
-`pixi run build-native` creates the plain Hann library, a C header, and an
-ABI manifest. `pixi run build-ext` builds the NumPy extension for Hann and
-verifies that Hann is a ufunc. Neither command installs the extension into
-the package.
+`pixi run build-native` creates one plain shared library that contains
+Hann and Boxcar, a C header, and an ABI manifest. `pixi run build-ext`
+builds one NumPy extension that contains Hann and Boxcar and verifies
+that each is a ufunc. Neither command installs the extension into the
+package.
 
 ## Working rules (summary)
 
