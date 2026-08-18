@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
 
+from ppsignal._windows import boxcar as boxcar_kernel
 from ppsignal._windows import hann as hann_kernel
 from ppsignal.windows import boxcar, hann
 
@@ -68,6 +69,13 @@ def test_boxcar_lengths(n):
     assert result.shape == (n,)
     assert result.dtype == np.float64
     np.testing.assert_array_equal(result, np.ones(n, dtype=np.float64))
+
+
+def test_boxcar_ignores_input_values():
+    a = boxcar_kernel(np.zeros(5))
+    b = boxcar_kernel(np.full(5, -123.456))
+    np.testing.assert_array_equal(a, np.ones(5))
+    np.testing.assert_array_equal(a, b)
 
 
 def test_boxcar_symmetric_and_periodic_are_equal_for_length_five():

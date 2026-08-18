@@ -3,11 +3,21 @@ from operator import index
 import numpy as np
 
 try:
+    from ppsignal_native import boxcar as _boxcar
     from ppsignal_native import hann as _hann
 except ModuleNotFoundError as exc:
     if exc.name != "ppsignal_native":
         raise
+    from ppsignal._windows import boxcar as _boxcar
     from ppsignal._windows import hann as _hann
+
+
+def boxcar(M, sym=True):
+    """Return a Boxcar window."""
+    length = index(M)
+    if length < 0:
+        raise ValueError("M must be non-negative")
+    return _boxcar(np.empty(length, dtype=np.float64))
 
 
 def hann(M, sym=True):
