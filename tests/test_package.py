@@ -137,6 +137,14 @@ def test_pixi_configuration_has_supported_platforms_and_tasks():
         assert tasks[task]["cmd"] == cmd
 
 
+def test_ci_runs_interpreted_suite_on_supported_python_versions():
+    workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
+
+    assert 'python-version: ["3.10", "3.12"]' in workflow
+    assert 'python -m pip install -e ".[dev]"' in workflow
+    assert "python -m pytest tests/" in workflow
+
+
 def test_isolated_wheel_import_without_pip(distributions, tmp_path):
     wheel = next(distributions.glob("*.whl"))
     target = tmp_path / "extracted-wheel"
