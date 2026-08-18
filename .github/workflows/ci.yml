@@ -43,3 +43,20 @@ jobs:
         run: python scripts/build_ext.py
       - name: Run native tests
         run: python -m pytest tests/test_build_scripts.py tests/test_native_ext.py
+
+  distribution:
+    name: Distribution build and tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install package and test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+      - name: Build wheel and source distribution
+        run: python -m build
+      - name: Run distribution tests
+        run: python -m pytest tests/test_package.py

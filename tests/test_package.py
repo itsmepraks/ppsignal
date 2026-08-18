@@ -137,7 +137,7 @@ def test_pixi_configuration_has_supported_platforms_and_tasks():
         assert tasks[task]["cmd"] == cmd
 
 
-def test_ci_runs_interpreted_and_native_checks():
+def test_ci_runs_interpreted_native_and_distribution_checks():
     workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
 
     assert 'python-version: ["3.10", "3.12"]' in workflow
@@ -154,6 +154,12 @@ def test_ci_runs_interpreted_and_native_checks():
         "python -m pytest tests/test_build_scripts.py tests/test_native_ext.py"
         in native_job
     )
+
+    distribution_job = workflow[workflow.index("  distribution:"):]
+    assert "name: Distribution build and tests" in distribution_job
+    assert 'python-version: "3.12"' in distribution_job
+    assert "python -m build" in distribution_job
+    assert "python -m pytest tests/test_package.py" in distribution_job
 
 
 def test_isolated_wheel_import_without_pip(distributions, tmp_path):
