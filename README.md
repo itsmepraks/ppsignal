@@ -8,8 +8,9 @@ under the standard CPython interpreter. Each kernel can also compile ahead
 of time into two native formats: a plain C shared library and a NumPy
 ufunc extension.
 
-Status: **Alpha**. The package has two complete window functions, Hann and
-Boxcar, with an interpreted path and a native path. It is part of the
+Status: **Alpha**. The package has three complete window functions, Hann,
+Boxcar, and Bartlett, with an interpreted path and a native path. It is part
+of the
 [PostSciPy effort](https://github.com/openteams-ai/postpython/blob/main/postscipy-roadmap.md)
 to rebuild SciPy one subpackage at a time, as the compiler's proving ground.
 
@@ -52,6 +53,34 @@ The accuracy target is exact numpy.float64 ones.
 The reference source is `scipy.signal.windows.boxcar`. See
 https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.windows.boxcar.html.
 
+## Use Bartlett
+
+```python
+from ppsignal.windows import bartlett
+
+symmetric = bartlett(5)
+periodic = bartlett(5, sym=False)
+```
+
+`bartlett(M)` returns a symmetric triangular window, for filter design.
+`bartlett(M, sym=False)` returns a periodic triangular window, for
+spectral analysis.
+
+In symmetric mode, a window longer than one value has zero at both
+endpoints. An odd symmetric length has one peak value of exactly 1. An
+even symmetric length has two equal maximum values, and each is less
+than 1.
+
+In periodic mode, `bartlett` computes an extended symmetric window one
+value longer, then removes its last value. An even periodic length can
+have a peak value of exactly 1.
+
+The accuracy target is calculated values that match fixed SciPy
+reference values, within a relative and absolute tolerance of 1e-15.
+
+The reference source is `scipy.signal.windows.bartlett`. See
+https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.windows.bartlett.html.
+
 ## Develop
 
 ```bash
@@ -64,10 +93,10 @@ pixi run build-prefix
 ```
 
 `pixi run build-native` creates one plain shared library that contains
-Hann and Boxcar, a C header, and an ABI manifest. `pixi run build-ext`
-builds one NumPy extension that contains Hann and Boxcar and verifies
-that each is a ufunc. Neither command installs the extension into the
-package.
+Hann, Boxcar, and Bartlett, a C header, and an ABI manifest. `pixi run
+build-ext` builds one NumPy extension that contains Hann, Boxcar, and
+Bartlett and verifies that each is a ufunc. Neither command installs the
+extension into the package.
 
 ## Working rules (summary)
 
