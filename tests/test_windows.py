@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
 
+from ppsignal._windows import bartlett as bartlett_kernel
 from ppsignal._windows import boxcar as boxcar_kernel
 from ppsignal._windows import hann as hann_kernel
 from ppsignal.windows import bartlett, boxcar, hann
@@ -131,6 +132,15 @@ def test_bartlett_symmetric_lengths(n):
     np.testing.assert_allclose(
         result, BARTLETT_EXPECTED[n], rtol=1e-15, atol=1e-15
     )
+
+
+def test_bartlett_ignores_input_values():
+    zeros = bartlett_kernel(np.zeros(5))
+    negatives = bartlett_kernel(np.full(5, -123.456))
+    np.testing.assert_allclose(
+        zeros, [0.0, 0.5, 1.0, 0.5, 0.0], rtol=1e-15, atol=1e-15
+    )
+    np.testing.assert_array_equal(zeros, negatives)
 
 
 @pytest.mark.parametrize("n", sorted(BARTLETT_PERIODIC_EXPECTED))
