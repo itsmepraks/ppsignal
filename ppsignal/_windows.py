@@ -11,6 +11,19 @@ def boxcar(shape: Array[Float64], out: Array[Float64]) -> None:
 
 
 @guvectorize([], "(n)->(n)")
+def bartlett(shape: Array[Float64], out: Array[Float64]) -> None:
+    length: Int64 = len(shape)
+    if length == 1:
+        out[0] = 1.0
+    else:
+        for i in range(length):
+            if 2 * i <= length - 1:
+                out[i] = 2.0 * i / (length - 1)
+            else:
+                out[i] = 2.0 - 2.0 * i / (length - 1)
+
+
+@guvectorize([], "(n)->(n)")
 def hann(shape: Array[Float64], out: Array[Float64]) -> None:
     length: Int64 = len(shape)
     if length == 1:

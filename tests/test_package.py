@@ -179,11 +179,13 @@ def test_pixi_configuration_has_supported_platforms_and_tasks():
     assert "shared library" in build_native_description
     assert "Hann" in build_native_description
     assert "Boxcar" in build_native_description
+    assert "Bartlett" in build_native_description
 
     build_ext_description = tasks["build-ext"]["description"]
     assert "NumPy extension" in build_ext_description
     assert "Hann" in build_ext_description
     assert "Boxcar" in build_ext_description
+    assert "Bartlett" in build_ext_description
 
 
 def test_ci_runs_interpreted_native_and_distribution_checks():
@@ -248,7 +250,7 @@ def test_isolated_wheel_import_without_pip(distributions, tmp_path):
         archive.extractall(target)
 
     script = (
-        "import sys, builtins\n"
+        "import sys, builtins, math\n"
         f"sys.path.insert(0, {str(target)!r})\n"
         "_real_import = builtins.__import__\n"
         "def _blocking_import(name, *args, **kwargs):\n"
@@ -258,9 +260,17 @@ def test_isolated_wheel_import_without_pip(distributions, tmp_path):
         "        )\n"
         "    return _real_import(name, *args, **kwargs)\n"
         "builtins.__import__ = _blocking_import\n"
-        "from ppsignal.windows import boxcar, hann\n"
+        "from ppsignal.windows import bartlett, boxcar, hann\n"
         "assert hann(3).tolist() == [0.0, 1.0, 0.0]\n"
         "assert boxcar(3).tolist() == [1.0, 1.0, 1.0]\n"
+        "assert bartlett(3).tolist() == [0.0, 1.0, 0.0]\n"
+        "bartlett4 = bartlett(4).tolist()\n"
+        "bartlett4_expected = [0.0, 2.0 / 3.0, 2.0 / 3.0, 0.0]\n"
+        "assert len(bartlett4) == len(bartlett4_expected)\n"
+        "assert all(\n"
+        "    math.isclose(actual, expected, rel_tol=1e-15, abs_tol=1e-15)\n"
+        "    for actual, expected in zip(bartlett4, bartlett4_expected)\n"
+        "), bartlett4\n"
     )
     subprocess.run(
         [sys.executable, "-I", "-c", script],
@@ -286,7 +296,7 @@ def test_readme_has_current_package_commands():
     assert "the interpreted window kernels." in install_section
 
     boxcar_section = readme[
-        readme.index("## Use Boxcar"):readme.index("## Develop")
+        readme.index("## Use Boxcar"):readme.index("## Use Bartlett")
     ]
     assert "from ppsignal.windows import boxcar" in boxcar_section
     assert "boxcar(5)" in boxcar_section
@@ -295,6 +305,16 @@ def test_readme_has_current_package_commands():
     assert "does not change" in boxcar_section
     assert "exact numpy.float64 ones" in boxcar_section
     assert "scipy.signal.windows.boxcar" in boxcar_section
+
+    bartlett_section = readme[
+        readme.index("## Use Bartlett"):readme.index("## Develop")
+    ]
+    assert "from ppsignal.windows import bartlett" in bartlett_section
+    assert "bartlett(5)" in bartlett_section
+    assert "symmetric" in bartlett_section
+    assert "periodic" in bartlett_section
+    assert "1e-15" in bartlett_section
+    assert "scipy.signal.windows.bartlett" in bartlett_section
 
     develop_section = readme[
         readme.index("## Develop"):readme.index("## Working rules (summary)")

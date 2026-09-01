@@ -10,12 +10,15 @@ def test_public_wrapper_prefers_available_native_windows():
         import types
 
         native = types.ModuleType("ppsignal_native")
+        native.bartlett = lambda values: "native-bartlett"
         native.boxcar = lambda values: "native-boxcar"
         native.hann = lambda values: "native-hann"
         sys.modules["ppsignal_native"] = native
 
         import ppsignal.windows as windows
 
+        assert windows._bartlett is native.bartlett
+        assert windows.bartlett(3) == "native-bartlett"
         assert windows._boxcar is native.boxcar
         assert windows.boxcar(3) == "native-boxcar"
         assert windows._hann is native.hann
@@ -44,6 +47,8 @@ def test_public_wrapper_falls_back_to_interpreted_windows_when_native_module_is_
         import ppsignal._windows as interpreted
         import ppsignal.windows as windows
 
+        assert windows._bartlett is interpreted.bartlett
+        assert windows.bartlett(3).tolist() == [0.0, 1.0, 0.0]
         assert windows._boxcar is interpreted.boxcar
         assert windows.boxcar(3).tolist() == [1.0, 1.0, 1.0]
         assert windows._hann is interpreted.hann
@@ -53,23 +58,51 @@ def test_public_wrapper_falls_back_to_interpreted_windows_when_native_module_is_
     subprocess.run([sys.executable, "-c", script], check=True)
 
 
-def test_public_wrapper_uses_interpreted_boxcar_when_native_module_lacks_it():
+def test_public_wrapper_uses_interpreted_boxcar_when_native_module_lacks_only_boxcar():
     script = textwrap.dedent(
         """
         import sys
         import types
 
         native = types.ModuleType("ppsignal_native")
+        native.bartlett = lambda values: "native-bartlett"
         native.hann = lambda values: "native-hann"
         sys.modules["ppsignal_native"] = native
 
         import ppsignal._windows as interpreted
         import ppsignal.windows as windows
 
+        assert windows._bartlett is native.bartlett
+        assert windows.bartlett(3) == "native-bartlett"
         assert windows._hann is native.hann
         assert windows.hann(3) == "native-hann"
         assert windows._boxcar is interpreted.boxcar
         assert windows.boxcar(3).tolist() == [1.0, 1.0, 1.0]
+        """
+    )
+    subprocess.run([sys.executable, "-c", script], check=True)
+
+
+def test_public_wrapper_uses_interpreted_bartlett_when_native_module_lacks_only_bartlett():
+    script = textwrap.dedent(
+        """
+        import sys
+        import types
+
+        native = types.ModuleType("ppsignal_native")
+        native.boxcar = lambda values: "native-boxcar"
+        native.hann = lambda values: "native-hann"
+        sys.modules["ppsignal_native"] = native
+
+        import ppsignal._windows as interpreted
+        import ppsignal.windows as windows
+
+        assert windows._boxcar is native.boxcar
+        assert windows.boxcar(3) == "native-boxcar"
+        assert windows._hann is native.hann
+        assert windows.hann(3) == "native-hann"
+        assert windows._bartlett is interpreted.bartlett
+        assert windows.bartlett(3).tolist() == [0.0, 1.0, 0.0]
         """
     )
     subprocess.run([sys.executable, "-c", script], check=True)
