@@ -37,12 +37,12 @@ def main() -> int:
         print("  " + "\n  ".join(str(error).splitlines()[:8]))
         return 1
 
-    for name in ("hann", "boxcar"):
+    for name in ("hann", "boxcar", "bartlett"):
         if not isinstance(getattr(module, name, None), np.ufunc):
             print(f"extension build FAILED: {name} is not a NumPy ufunc")
             return 1
     print(f"built {built}")
-    print("registered Hann and Boxcar ufuncs")
+    print("registered Hann, Boxcar, and Bartlett ufuncs")
     return 0
 
 

@@ -94,6 +94,7 @@ def test_build_native_emits_library_header_and_manifest(tmp_path):
 
     assert "hann" in result.stdout
     assert "boxcar" in result.stdout
+    assert "bartlett" in result.stdout
     assert (tmp_path / "ppsignal_windows.so").is_file()
     assert (tmp_path / "ppsignal_windows.h").is_file()
     assert (tmp_path / "ppsignal_windows.json").is_file()
@@ -111,9 +112,15 @@ def test_build_native_emits_library_header_and_manifest(tmp_path):
     assert boxcar_export["kind"] == "ufunc"
     assert boxcar_export["ufunc"]["signature"] == "(n)->(n)"
 
+    bartlett_export = exports["bartlett"]
+    assert bartlett_export["c_symbol"] == "pp_bartlett"
+    assert bartlett_export["kind"] == "ufunc"
+    assert bartlett_export["ufunc"]["signature"] == "(n)->(n)"
+
     header = (tmp_path / "ppsignal_windows.h").read_text()
     assert "pp_hann" in header
     assert "pp_boxcar" in header
+    assert "pp_bartlett" in header
 
     hann_values = _call_pp_window(tmp_path / "ppsignal_windows.so", "pp_hann", length=5)
     np.testing.assert_allclose(
@@ -131,6 +138,16 @@ def test_build_native_emits_library_header_and_manifest(tmp_path):
         [1.0, 1.0, 1.0, 1.0, 1.0],
     )
 
+    bartlett_values = _call_pp_window(
+        tmp_path / "ppsignal_windows.so", "pp_bartlett", length=5
+    )
+    np.testing.assert_allclose(
+        bartlett_values,
+        [0.0, 0.5, 1.0, 0.5, 0.0],
+        rtol=1e-15,
+        atol=1e-15,
+    )
+
 
 @requires_compiler
 def test_build_ext_emits_importable_window_ufuncs(tmp_path):
@@ -145,7 +162,7 @@ def test_build_ext_emits_importable_window_ufuncs(tmp_path):
         text=True,
     )
 
-    assert "registered Hann and Boxcar ufuncs" in result.stdout
+    assert "registered Hann, Boxcar, and Bartlett ufuncs" in result.stdout
     artifact = tmp_path / f"ppsignal_native{EXTENSION_SUFFIXES[0]}"
     assert artifact.is_file()
 
@@ -173,4 +190,12 @@ def test_build_ext_emits_importable_window_ufuncs(tmp_path):
     np.testing.assert_array_equal(
         module.boxcar(np.zeros(5, dtype=np.float64)),
         [1.0, 1.0, 1.0, 1.0, 1.0],
+    )
+    assert isinstance(module.bartlett, np.ufunc)
+    assert module.bartlett.signature == "(n)->(n)"
+    np.testing.assert_allclose(
+        module.bartlett(np.zeros(5, dtype=np.float64)),
+        [0.0, 0.5, 1.0, 0.5, 0.0],
+        rtol=1e-15,
+        atol=1e-15,
     )

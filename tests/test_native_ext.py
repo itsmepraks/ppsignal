@@ -30,6 +30,8 @@ def test_compiled_windows_match_interpreted_and_public(tmp_path, monkeypatch):
     assert native.hann.signature == "(n)->(n)"
     assert isinstance(native.boxcar, np.ufunc)
     assert native.boxcar.signature == "(n)->(n)"
+    assert isinstance(native.bartlett, np.ufunc)
+    assert native.bartlett.signature == "(n)->(n)"
 
     for length in [0, 1, 2, 4, 5, 16]:
         shape = np.zeros(length, dtype=np.float64)
@@ -47,6 +49,15 @@ def test_compiled_windows_match_interpreted_and_public(tmp_path, monkeypatch):
             windows.boxcar(shape),
         )
 
+    for length in [0, 1, 2, 4, 5, 16]:
+        shape = np.zeros(length, dtype=np.float64)
+        np.testing.assert_allclose(
+            native.bartlett(shape),
+            windows.bartlett(shape),
+            rtol=1e-15,
+            atol=1e-15,
+        )
+
     monkeypatch.setitem(sys.modules, "ppsignal._windows", native)
 
     public_name = "ppsignal_windows_public_test"
@@ -58,6 +69,7 @@ def test_compiled_windows_match_interpreted_and_public(tmp_path, monkeypatch):
 
     assert public._hann is native.hann
     assert public._boxcar is native.boxcar
+    assert public._bartlett is native.bartlett
 
     np.testing.assert_allclose(
         public.hann(5),
@@ -84,4 +96,16 @@ def test_compiled_windows_match_interpreted_and_public(tmp_path, monkeypatch):
     np.testing.assert_array_equal(
         public.boxcar(5, sym=False),
         [1.0, 1.0, 1.0, 1.0, 1.0],
+    )
+    np.testing.assert_allclose(
+        public.bartlett(5),
+        [0.0, 0.5, 1.0, 0.5, 0.0],
+        rtol=1e-15,
+        atol=1e-15,
+    )
+    np.testing.assert_allclose(
+        public.bartlett(5, sym=False),
+        [0.0, 0.4, 0.8, 0.8, 0.4],
+        rtol=1e-15,
+        atol=1e-15,
     )
