@@ -9,3 +9,7 @@ build/
 .pytest_cache/
 .claude/
 .pixi/
+docs/superpowers/
+AGENTS.md
+CLAUDE.md
+.worklog/
