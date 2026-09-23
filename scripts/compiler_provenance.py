@@ -16,37 +16,78 @@ SCHEMA_VERSION = 1
 PACKAGE_NAMES = ("numpy", "postpyc", "postyp")
 
 
-def _compiler_info():
-    command = os.environ.get("CC") or "cc"
+def _resolve_tool(command):
+    """Split a shell-style command string and resolve its first token, shell-free."""
     try:
         tokens = shlex.split(command)
     except ValueError:
         tokens = []
+    if not tokens:
+        return None, []
+    resolved_path = shutil.which(tokens[0])
+    if resolved_path is None:
+        return None, []
+    return resolved_path, tokens[1:]
 
-    resolved_path = None
+
+def _probe_tool_version(resolved_path, extra_args, version_flags):
+    for flag in version_flags:
+        try:
+            result = subprocess.run(
+                [resolved_path, *extra_args, flag],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                shell=False,
+            )
+        except (subprocess.SubprocessError, OSError):
+            continue
+        if result.returncode == 0:
+            return result.stdout.strip() or result.stderr.strip() or None
+    return None
+
+
+def _tool_info(command, version_flags):
+    resolved_path, extra_args = _resolve_tool(command)
     version = None
-    if tokens:
-        resolved_path = shutil.which(tokens[0])
-        if resolved_path is not None:
-            try:
-                result = subprocess.run(
-                    [resolved_path, *tokens[1:], "--version"],
-                    capture_output=True,
-                    text=True,
-                    timeout=10,
-                    shell=False,
-                )
-                if result.returncode == 0:
-                    version = result.stdout.strip() or result.stderr.strip() or None
-            except (OSError, subprocess.SubprocessError):
-                version = None
+    if resolved_path is not None:
+        version = _probe_tool_version(resolved_path, extra_args, version_flags)
     return {"command": command, "resolved_path": resolved_path, "version": version}
 
 
+def _compiler_info():
+    command = os.environ.get("CC") or "cc"
+    return _tool_info(command, ("--version",))
+
+
+def _linker_info():
+    command = os.environ.get("LD") or "ld"
+    return _tool_info(command, ("--version", "-v"))
+
+
+def _sdk_version(selected_path):
+    if not selected_path:
+        return None
+    settings_path = Path(selected_path) / "SDKSettings.json"
+    try:
+        data = json.loads(settings_path.read_text())
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    version = data.get("MinimalDisplayName")
+    return version if isinstance(version, str) else None
+
+
 def _sdk_info():
+    sdkroot = os.environ.get("SDKROOT")
+    conda_build_sysroot = os.environ.get("CONDA_BUILD_SYSROOT")
+    selected_path = conda_build_sysroot or sdkroot
     return {
-        "SDKROOT": os.environ.get("SDKROOT"),
-        "CONDA_BUILD_SYSROOT": os.environ.get("CONDA_BUILD_SYSROOT"),
+        "SDKROOT": sdkroot,
+        "CONDA_BUILD_SYSROOT": conda_build_sysroot,
+        "selected_path": selected_path,
+        "version": _sdk_version(selected_path),
     }
 
 
@@ -74,6 +115,7 @@ def _build_provenance():
             "machine": platform.machine(),
         },
         "compiler": _compiler_info(),
+        "linker": _linker_info(),
         "sdk": _sdk_info(),
         "packages": _package_versions(),
     }
