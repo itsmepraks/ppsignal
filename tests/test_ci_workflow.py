@@ -1,0 +1,210 @@
+"""Contract tests for .github/workflows/ci.yml.
+
+These tests read the workflow file as text and assert the observable
+security/reproducibility policy without parsing YAML. They are ongoing
+contract tests: any change to the workflow's triggers, permissions, job
+structure, action pinning, or provenance handling must keep these
+assertions passing.
+"""
+
+import re
+from pathlib import Path
+
+import pytest
+
+ROOT = Path(__file__).resolve().parent.parent
+WORKFLOW_PATH = ROOT / ".github" / "workflows" / "ci.yml"
+
+
+def _read_workflow():
+    if not WORKFLOW_PATH.exists():
+        pytest.fail(f"missing workflow file: {WORKFLOW_PATH}")
+    return WORKFLOW_PATH.read_text()
+
+
+def test_workflow_file_exists():
+    assert WORKFLOW_PATH.exists()
+
+
+def test_triggers_on_pull_request_and_push_to_main():
+    text = _read_workflow()
+    assert re.search(r"^on:", text, re.MULTILINE)
+    assert re.search(r"pull_request:", text)
+    assert re.search(r"push:", text)
+    assert re.search(r"branches:\s*\[?.*\bmain\b", text)
+    assert not re.search(r"pull_request_target", text), (
+        "expected the workflow to never trigger on the unsafe `pull_request_target` event"
+    )
+
+
+def _top_level_permissions_block(text):
+    match = re.search(r"^permissions:\s*\n", text, re.MULTILINE)
+    assert match, "expected a top-level `permissions:` key"
+    rest = text[match.end() :]
+    next_top_level = re.search(r"^\S", rest, re.MULTILINE)
+    return rest[: next_top_level.start()] if next_top_level else rest
+
+
+def test_top_level_permissions_are_read_only_contents():
+    text = _read_workflow()
+    block = _top_level_permissions_block(text)
+    entries = [
+        line.strip()
+        for line in block.splitlines()
+        if line.strip() and not line.strip().startswith("#")
+    ]
+    assert entries == ["contents: read"], (
+        "expected the top-level `permissions:` block to contain exactly one entry, "
+        f"`contents: read`, but found {entries!r}"
+    )
+
+
+def test_interpreted_job_has_python_matrix_and_editable_install():
+    text = _read_workflow()
+    assert re.search(r"python-version:.*(\[.*3\.10.*3\.12.*\]|\n(\s*-\s*[\"']?3\.10.*\n)+.*3\.12)", text)
+    assert re.search(r"pip install .*(-e|--editable)\s+\S*\[dev\]", text)
+
+
+def test_locked_job_uses_pinned_ubuntu_checkout_and_pixi_setup():
+    text = _read_workflow()
+    assert "ubuntu-latest" in text
+    assert "actions/checkout" in text
+    assert "prefix-dev/setup-pixi" in text
+    assert re.search(r"pixi-version:\s*v0\.81\.0", text)
+    assert re.search(r"frozen:\s*true", text)
+    assert re.search(r"cache:\s*true", text)
+
+
+def test_locked_job_runs_provenance_before_build_and_test():
+    text = _read_workflow()
+    provenance = text.find("pixi run --locked provenance")
+    build_dist = text.find("pixi run --locked build-dist")
+    test_run = text.find("pixi run --locked test")
+
+    assert provenance != -1, "expected `pixi run --locked provenance`"
+    assert build_dist != -1, "expected `pixi run --locked build-dist`"
+    assert test_run != -1, "expected `pixi run --locked test`"
+    assert provenance < build_dist < test_run
+
+
+def test_locked_job_uploads_provenance_artifact():
+    text = _read_workflow()
+    assert "actions/upload-artifact" in text
+    assert "dist/provenance.json" in text
+    assert re.search(r"if:\s*always\(\)", text)
+    assert re.search(r"if-no-files-found:\s*error", text)
+
+
+# CI/workflow-hardening contract: the tests below enforce that actions are
+# pinned by immutable commit SHA (with a version tag comment for
+# reviewability) rather than by mutable tag, that both checkout steps set
+# `persist-credentials: false`, that every job declares `timeout-minutes`,
+# that the provenance artifact upload sets `retention-days: 14`, and that
+# the provenance artifact is uploaded right after provenance generation
+# but before the build-dist step runs.
+
+CHECKOUT_ACTION = "actions/checkout"
+CHECKOUT_SHA = "3d3c42e5aac5ba805825da76410c181273ba90b1"
+CHECKOUT_COMMENT = "v7.0.1"
+
+SETUP_PYTHON_ACTION = "actions/setup-python"
+SETUP_PYTHON_SHA = "5fda3b95a4ea91299a34e894583c3862153e4b97"
+SETUP_PYTHON_COMMENT = "v7.0.0"
+
+SETUP_PIXI_ACTION = "prefix-dev/setup-pixi"
+SETUP_PIXI_SHA = "d3f436a425481402e6a95a1d1fc10331c708cd9e"
+SETUP_PIXI_COMMENT = "v0.10.2"
+
+UPLOAD_ARTIFACT_ACTION = "actions/upload-artifact"
+UPLOAD_ARTIFACT_SHA = "043fb46d1a93c77aae656e7c1c64a875d1fc6a0a"
+UPLOAD_ARTIFACT_COMMENT = "v7.0.1"
+
+
+def _action_pin_pattern(action, sha, comment):
+    return re.compile(
+        r"uses:\s*" + re.escape(action) + "@" + re.escape(sha) + r"\s*#\s*" + re.escape(comment)
+    )
+
+
+def _job_blocks(text):
+    jobs_match = re.search(r"^jobs:\s*\n", text, re.MULTILINE)
+    assert jobs_match, "expected a top-level `jobs:` section"
+    jobs_text = text[jobs_match.end() :]
+
+    next_top_level = re.search(r"^\S", jobs_text, re.MULTILINE)
+    if next_top_level:
+        jobs_text = jobs_text[: next_top_level.start()]
+
+    job_starts = [m.start() for m in re.finditer(r"^  [a-zA-Z_][\w-]*:\s*\n", jobs_text, re.MULTILINE)]
+    job_starts.append(len(jobs_text))
+    return [jobs_text[job_starts[i] : job_starts[i + 1]] for i in range(len(job_starts) - 1)]
+
+
+def test_checkout_action_is_pinned_to_reviewed_sha_with_version_comment():
+    text = _read_workflow()
+    pattern = _action_pin_pattern(CHECKOUT_ACTION, CHECKOUT_SHA, CHECKOUT_COMMENT)
+    matches = pattern.findall(text)
+    assert len(matches) == 2, "expected both jobs to pin actions/checkout to the reviewed SHA"
+
+
+def test_setup_python_action_is_pinned_to_reviewed_sha_with_version_comment():
+    text = _read_workflow()
+    pattern = _action_pin_pattern(SETUP_PYTHON_ACTION, SETUP_PYTHON_SHA, SETUP_PYTHON_COMMENT)
+    assert pattern.search(text), "expected actions/setup-python pinned to the reviewed SHA"
+
+
+def test_setup_pixi_action_is_pinned_to_reviewed_sha_with_version_comment():
+    text = _read_workflow()
+    pattern = _action_pin_pattern(SETUP_PIXI_ACTION, SETUP_PIXI_SHA, SETUP_PIXI_COMMENT)
+    assert pattern.search(text), "expected prefix-dev/setup-pixi pinned to the reviewed SHA"
+
+
+def test_upload_artifact_action_is_pinned_to_reviewed_sha_with_version_comment():
+    text = _read_workflow()
+    pattern = _action_pin_pattern(UPLOAD_ARTIFACT_ACTION, UPLOAD_ARTIFACT_SHA, UPLOAD_ARTIFACT_COMMENT)
+    assert pattern.search(text), "expected actions/upload-artifact pinned to the reviewed SHA"
+
+
+def test_both_checkout_steps_disable_persist_credentials():
+    text = _read_workflow()
+    pattern = _action_pin_pattern(CHECKOUT_ACTION, CHECKOUT_SHA, CHECKOUT_COMMENT)
+    matches = list(pattern.finditer(text))
+    assert len(matches) == 2, "expected exactly two pinned checkout steps"
+    for match in matches:
+        following = text[match.end() : match.end() + 200]
+        assert re.search(r"persist-credentials:\s*false", following), (
+            "expected persist-credentials: false immediately following each checkout step"
+        )
+
+
+def test_both_jobs_declare_timeout_minutes():
+    text = _read_workflow()
+    blocks = _job_blocks(text)
+    assert len(blocks) == 2, "expected exactly two jobs (interpreted, locked)"
+    for block in blocks:
+        assert re.search(r"timeout-minutes:\s*\d+", block), "expected timeout-minutes on every job"
+
+
+def test_upload_artifact_step_sets_retention_days_to_14():
+    text = _read_workflow()
+    pattern = _action_pin_pattern(UPLOAD_ARTIFACT_ACTION, UPLOAD_ARTIFACT_SHA, UPLOAD_ARTIFACT_COMMENT)
+    match = pattern.search(text)
+    assert match, "expected pinned upload-artifact step"
+    following = text[match.end() : match.end() + 300]
+    assert re.search(r"retention-days:\s*14\b", following), "expected retention-days: 14 on the upload step"
+
+
+def test_upload_artifact_step_runs_after_provenance_but_before_build_dist():
+    text = _read_workflow()
+    provenance_idx = text.find("pixi run --locked provenance")
+    build_dist_idx = text.find("pixi run --locked build-dist")
+    pattern = _action_pin_pattern(UPLOAD_ARTIFACT_ACTION, UPLOAD_ARTIFACT_SHA, UPLOAD_ARTIFACT_COMMENT)
+    upload_match = pattern.search(text)
+
+    assert provenance_idx != -1, "expected `pixi run --locked provenance`"
+    assert build_dist_idx != -1, "expected `pixi run --locked build-dist`"
+    assert upload_match, "expected pinned upload-artifact step"
+    assert provenance_idx < upload_match.start() < build_dist_idx, (
+        "expected the provenance artifact to be uploaded after provenance generation "
+        "but before build-dist runs"
+    )

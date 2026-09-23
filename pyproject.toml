@@ -88,3 +88,4 @@ build-dist = { cmd = "python -m build --no-isolation", description = "Build the 
 build-native = { cmd = "python scripts/build_native.py", description = "Build the native compiler probe" }
 build-ext = { cmd = "python scripts/build_ext.py", description = "Build the compiled extension module" }
 build-prefix = { cmd = "postpyc build ppsignal/_compiler_probe.py --prefix dist/prefix --module-name ppsignal", description = "Build the compiler probe into a POST Python prefix" }
+provenance = { cmd = "python scripts/compiler_provenance.py --output dist/provenance.json", description = "Capture compiler/SDK/package provenance" }

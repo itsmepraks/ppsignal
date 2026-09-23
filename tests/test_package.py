@@ -149,6 +149,7 @@ def test_pixi_tasks_cover_test_and_build_workflows():
             "postpyc build ppsignal/_compiler_probe.py "
             "--prefix dist/prefix --module-name ppsignal"
         ),
+        "provenance": "python scripts/compiler_provenance.py --output dist/provenance.json",
     }
     for name, cmd in expected_cmds.items():
         task = tasks[name]
