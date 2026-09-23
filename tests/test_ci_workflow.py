@@ -75,26 +75,6 @@ def test_locked_job_uses_pinned_ubuntu_checkout_and_pixi_setup():
     assert re.search(r"cache:\s*true", text)
 
 
-def test_locked_job_runs_provenance_before_build_and_test():
-    text = _read_workflow()
-    provenance = text.find("pixi run --locked provenance")
-    build_dist = text.find("pixi run --locked build-dist")
-    test_run = text.find("pixi run --locked test")
-
-    assert provenance != -1, "expected `pixi run --locked provenance`"
-    assert build_dist != -1, "expected `pixi run --locked build-dist`"
-    assert test_run != -1, "expected `pixi run --locked test`"
-    assert provenance < build_dist < test_run
-
-
-def test_locked_job_uploads_provenance_artifact():
-    text = _read_workflow()
-    assert "actions/upload-artifact" in text
-    assert "dist/provenance.json" in text
-    assert re.search(r"if:\s*always\(\)", text)
-    assert re.search(r"if-no-files-found:\s*error", text)
-
-
 # CI/workflow-hardening contract: the tests below enforce that actions are
 # pinned by immutable commit SHA (with a version tag comment for
 # reviewability) rather than by mutable tag, that both checkout steps set
@@ -185,26 +165,74 @@ def test_both_jobs_declare_timeout_minutes():
         assert re.search(r"timeout-minutes:\s*\d+", block), "expected timeout-minutes on every job"
 
 
-def test_upload_artifact_step_sets_retention_days_to_14():
+def _named_job_block(text, name):
+    """Return the block of text for the given top-level job name."""
+    blocks = _job_blocks(text)
+    block = next((b for b in blocks if b.startswith(f"  {name}:")), None)
+    assert block, f"expected a `{name}:` job"
+    return block
+
+
+def _job_steps(block):
+    """Split a job block into its six-space-indented step blocks."""
+    step_starts = [m.start() for m in re.finditer(r"^      - ", block, re.MULTILINE)]
+    step_starts.append(len(block))
+    return [block[step_starts[i] : step_starts[i + 1]] for i in range(len(step_starts) - 1)]
+
+
+def test_locked_job_provenance_lifecycle_order_and_upload_contract():
+    """Five consecutive steps must run, in order: generate provenance under
+    the locked pixi env, validate the resulting JSON under the same locked
+    env (not the runner's system Python), upload it only after successful
+    validation (never `if: always()`, so invalid/partial provenance can
+    never be published), then build the distribution, then run the test
+    suite under the same locked pixi env."""
     text = _read_workflow()
-    pattern = _action_pin_pattern(UPLOAD_ARTIFACT_ACTION, UPLOAD_ARTIFACT_SHA, UPLOAD_ARTIFACT_COMMENT)
-    match = pattern.search(text)
-    assert match, "expected pinned upload-artifact step"
-    following = text[match.end() : match.end() + 300]
-    assert re.search(r"retention-days:\s*14\b", following), "expected retention-days: 14 on the upload step"
+    steps = _job_steps(_named_job_block(text, "locked"))
 
+    provenance_idx = next(
+        (i for i, step in enumerate(steps) if step.lstrip().splitlines()[0] == "- run: pixi run --locked provenance"),
+        None,
+    )
+    assert provenance_idx is not None, "expected `- run: pixi run --locked provenance` as a step's first line"
+    assert provenance_idx + 4 < len(steps), (
+        "expected at least four steps immediately after `pixi run --locked provenance`"
+    )
 
-def test_upload_artifact_step_runs_after_provenance_but_before_build_dist():
-    text = _read_workflow()
-    provenance_idx = text.find("pixi run --locked provenance")
-    build_dist_idx = text.find("pixi run --locked build-dist")
-    pattern = _action_pin_pattern(UPLOAD_ARTIFACT_ACTION, UPLOAD_ARTIFACT_SHA, UPLOAD_ARTIFACT_COMMENT)
-    upload_match = pattern.search(text)
+    validate_step, upload_step, build_step, test_step = steps[provenance_idx + 1 : provenance_idx + 5]
 
-    assert provenance_idx != -1, "expected `pixi run --locked provenance`"
-    assert build_dist_idx != -1, "expected `pixi run --locked build-dist`"
-    assert upload_match, "expected pinned upload-artifact step"
-    assert provenance_idx < upload_match.start() < build_dist_idx, (
-        "expected the provenance artifact to be uploaded after provenance generation "
-        "but before build-dist runs"
+    assert (
+        validate_step.lstrip().splitlines()[0]
+        == "- run: pixi run --locked python -m json.tool dist/provenance.json"
+    ), (
+        "expected the step immediately after provenance generation to validate the JSON "
+        "via `pixi run --locked python -m json.tool dist/provenance.json`, not the runner's "
+        "system Python"
+    )
+
+    upload_uses_line = f"- uses: {UPLOAD_ARTIFACT_ACTION}@{UPLOAD_ARTIFACT_SHA} # {UPLOAD_ARTIFACT_COMMENT}"
+    assert upload_step.lstrip().splitlines()[0] == upload_uses_line, (
+        "expected the step immediately after JSON validation to be the pinned upload-artifact action"
+    )
+
+    assert build_step.lstrip().splitlines()[0] == "- run: pixi run --locked build-dist", (
+        "expected the step immediately after the upload to be `pixi run --locked build-dist`"
+    )
+
+    assert test_step.lstrip().splitlines()[0] == "- run: pixi run --locked test", (
+        "expected the step immediately after `pixi run --locked build-dist` to be `pixi run --locked test`"
+    )
+
+    upload_lines = [line.strip() for line in upload_step.splitlines() if line.strip()]
+    assert upload_lines == [
+        upload_uses_line,
+        "with:",
+        "name: compiler-provenance",
+        "path: dist/provenance.json",
+        "if-no-files-found: error",
+        "retention-days: 14",
+    ], (
+        "expected the upload step to contain exactly the pinned `uses:` line, `with:`, "
+        "`name: compiler-provenance`, `path: dist/provenance.json`, `if-no-files-found: error`, "
+        f"and `retention-days: 14` (and nothing else, e.g. no `if: always()`), got {upload_lines!r}"
     )
