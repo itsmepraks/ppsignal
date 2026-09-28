@@ -91,6 +91,16 @@ def _sdk_info():
     }
 
 
+def _ci_info():
+    return {
+        "repository": os.environ.get("GITHUB_REPOSITORY") or None,
+        "commit_sha": os.environ.get("GITHUB_SHA") or None,
+        "run_id": os.environ.get("GITHUB_RUN_ID") or None,
+        "run_attempt": os.environ.get("GITHUB_RUN_ATTEMPT") or None,
+        "job": os.environ.get("GITHUB_JOB") or None,
+    }
+
+
 def _package_versions():
     versions = {}
     for name in PACKAGE_NAMES:
@@ -104,6 +114,7 @@ def _package_versions():
 def _build_provenance():
     return {
         "schema_version": SCHEMA_VERSION,
+        "ci": _ci_info(),
         "python": {
             "implementation": platform.python_implementation(),
             "version": platform.python_version(),

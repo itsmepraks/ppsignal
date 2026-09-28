@@ -14,10 +14,18 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 SCRIPT = ROOT / "scripts" / "compiler_provenance.py"
 
-REQUIRED_SECTIONS = {"python", "platform", "compiler", "linker", "sdk", "packages"}
+REQUIRED_SECTIONS = {"python", "platform", "compiler", "linker", "sdk", "packages", "ci"}
 SDK_KEYS = {"SDKROOT", "CONDA_BUILD_SYSROOT", "selected_path", "version"}
 LINKER_KEYS = {"command", "resolved_path", "version"}
 PACKAGE_KEYS = {"numpy", "postpyc", "postyp"}
+CI_KEYS = {"repository", "commit_sha", "run_id", "run_attempt", "job"}
+CI_ENV_VARS = {
+    "repository": "GITHUB_REPOSITORY",
+    "commit_sha": "GITHUB_SHA",
+    "run_id": "GITHUB_RUN_ID",
+    "run_attempt": "GITHUB_RUN_ATTEMPT",
+    "job": "GITHUB_JOB",
+}
 
 
 def _run_script(args) -> subprocess.CompletedProcess:
@@ -44,7 +52,13 @@ def _installed_version(name: str):
         return None
 
 
-def test_compiler_provenance_writes_schema_v1_json_with_required_sections(tmp_path):
+def test_compiler_provenance_writes_schema_v1_json_with_required_sections(monkeypatch, tmp_path):
+    monkeypatch.setenv("GITHUB_REPOSITORY", "openteams/ppsignal")
+    monkeypatch.setenv("GITHUB_SHA", "deadbeefcafef00d")
+    monkeypatch.setenv("GITHUB_RUN_ID", "123456789")
+    monkeypatch.setenv("GITHUB_RUN_ATTEMPT", "2")
+    monkeypatch.setenv("GITHUB_JOB", "build")
+
     output_path = tmp_path / "provenance.json"
     result = _run_script(["--output", str(output_path)])
 
@@ -94,6 +108,16 @@ def test_compiler_provenance_writes_schema_v1_json_with_required_sections(tmp_pa
     assert set(packages_info.keys()) == PACKAGE_KEYS
     for package_name in PACKAGE_KEYS:
         assert packages_info[package_name] == _installed_version(package_name)
+
+    ci_info = data["ci"]
+    assert set(ci_info.keys()) == CI_KEYS
+    assert ci_info == {
+        "repository": "openteams/ppsignal",
+        "commit_sha": "deadbeefcafef00d",
+        "run_id": "123456789",
+        "run_attempt": "2",
+        "job": "build",
+    }
 
 
 def test_compiler_provenance_reports_none_for_missing_compiler_and_packages(
@@ -437,3 +461,49 @@ def test_sdk_version_is_null_for_invalid_metadata(monkeypatch, tmp_path, write_s
         write_settings(sdk_dir / "SDKSettings.json")
 
     assert module._sdk_info()["version"] is None
+
+
+# CI-context contract: `ci` exposes exactly repository, commit_sha, run_id,
+# run_attempt, and job, mapped only from GITHUB_REPOSITORY, GITHUB_SHA,
+# GITHUB_RUN_ID, GITHUB_RUN_ATTEMPT, and GITHUB_JOB. Missing or empty
+# variables become null, and no other environment variable is surfaced.
+
+
+def test_ci_info_all_missing_or_one_empty_becomes_all_none(monkeypatch):
+    module = _load_script_module("compiler_provenance_ci_all_missing_one_empty")
+
+    for var in CI_ENV_VARS.values():
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv(next(iter(CI_ENV_VARS.values())), "")
+
+    info = module._ci_info()
+
+    assert info == {key: None for key in CI_KEYS}
+
+
+def test_ci_info_excludes_secrets_and_returns_only_allowed_values(monkeypatch):
+    module = _load_script_module("compiler_provenance_ci_secrets_excluded")
+
+    sample_values = {
+        "GITHUB_REPOSITORY": "openteams/ppsignal",
+        "GITHUB_SHA": "deadbeefcafef00d",
+        "GITHUB_RUN_ID": "123456789",
+        "GITHUB_RUN_ATTEMPT": "2",
+        "GITHUB_JOB": "build",
+    }
+    for var, value in sample_values.items():
+        monkeypatch.setenv(var, value)
+
+    secret_value = "super-secret-api-key-value"
+    monkeypatch.setenv("GITHUB_TOKEN", "ghp_supersecrettoken")
+    monkeypatch.setenv("SECRET_API_KEY", secret_value)
+
+    info = module._ci_info()
+
+    assert info == {
+        "repository": "openteams/ppsignal",
+        "commit_sha": "deadbeefcafef00d",
+        "run_id": "123456789",
+        "run_attempt": "2",
+        "job": "build",
+    }
