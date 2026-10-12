@@ -481,6 +481,102 @@ def test_ci_info_all_missing_or_one_empty_becomes_all_none(monkeypatch):
     assert info == {key: None for key in CI_KEYS}
 
 
+# --validate contract: `--validate PATH` exits 0 for a document produced by
+# this script's own collector, and exits 1 (never a traceback) for `{}`,
+# for JSON that is missing a required nested key, and for malformed JSON.
+
+
+def test_validate_accepts_a_freshly_generated_schema_v1_document(tmp_path):
+    module = _load_script_module("compiler_provenance_validate_accepts")
+
+    output_path = tmp_path / "provenance.json"
+    output_path.write_text(json.dumps(module._build_provenance()))
+
+    result = _run_script(["--validate", str(output_path)])
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "Traceback" not in result.stdout
+    assert "Traceback" not in result.stderr
+
+
+_MISSING_NESTED_KEY = object()
+_BOOLEAN_SCHEMA_VERSION = object()
+_FLOAT_SCHEMA_VERSION = object()
+
+
+@pytest.mark.parametrize(
+    "contents",
+    [
+        pytest.param("{}", id="empty-object"),
+        pytest.param(_MISSING_NESTED_KEY, id="missing-nested-key"),
+        pytest.param(_BOOLEAN_SCHEMA_VERSION, id="boolean-schema-version"),
+        pytest.param(_FLOAT_SCHEMA_VERSION, id="float-schema-version"),
+        pytest.param("{not json", id="malformed-json"),
+    ],
+)
+def test_validate_rejects_invalid_documents(tmp_path, contents):
+    if contents is _MISSING_NESTED_KEY:
+        module = _load_script_module("compiler_provenance_validate_missing_nested_key")
+        provenance = module._build_provenance()
+        del provenance["linker"]["version"]
+        contents = json.dumps(provenance)
+    elif contents is _BOOLEAN_SCHEMA_VERSION:
+        module = _load_script_module("compiler_provenance_validate_schema_version_type")
+        provenance = module._build_provenance()
+        provenance["schema_version"] = True
+        contents = json.dumps(provenance)
+    elif contents is _FLOAT_SCHEMA_VERSION:
+        module = _load_script_module("compiler_provenance_validate_schema_version_type")
+        provenance = module._build_provenance()
+        provenance["schema_version"] = 1.0
+        contents = json.dumps(provenance)
+
+    invalid_path = tmp_path / "invalid.json"
+    invalid_path.write_text(contents)
+
+    result = _run_script(["--validate", str(invalid_path)])
+
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "Traceback" not in result.stdout
+    assert "Traceback" not in result.stderr
+
+
+def _add_extra_top_level_key(provenance):
+    provenance["extra"] = "unexpected"
+
+
+def _set_non_string_leaf(provenance):
+    provenance["python"]["version"] = 3.12
+
+
+def _set_non_object_section(provenance):
+    provenance["sdk"] = ["not", "an", "object"]
+
+
+@pytest.mark.parametrize(
+    ("mutate", "reason"),
+    [
+        pytest.param(_add_extra_top_level_key, "unexpected top-level keys: ['extra']", id="extra-top-level-key"),
+        pytest.param(_set_non_string_leaf, "python.version must be a string or null", id="non-string-leaf"),
+        pytest.param(_set_non_object_section, "section 'sdk' is not an object", id="non-object-section"),
+    ],
+)
+def test_validate_rejects_schema_violations_with_reason(tmp_path, mutate, reason):
+    module = _load_script_module("compiler_provenance_validate_schema_violations")
+    provenance = module._build_provenance()
+    mutate(provenance)
+
+    invalid_path = tmp_path / "invalid.json"
+    invalid_path.write_text(json.dumps(provenance))
+
+    result = _run_script(["--validate", str(invalid_path)])
+
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "Traceback" not in result.stdout
+    assert "Traceback" not in result.stderr
+    assert reason in result.stdout
+
+
 def test_ci_info_excludes_secrets_and_returns_only_allowed_values(monkeypatch):
     module = _load_script_module("compiler_provenance_ci_secrets_excluded")
 

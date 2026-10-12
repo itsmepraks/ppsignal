@@ -15,6 +15,17 @@ from pathlib import Path
 SCHEMA_VERSION = 1
 PACKAGE_NAMES = ("numpy", "postpyc", "postyp")
 
+SCHEMA_SECTIONS = {
+    "ci": frozenset({"repository", "commit_sha", "run_id", "run_attempt", "job"}),
+    "python": frozenset({"implementation", "version", "executable"}),
+    "platform": frozenset({"system", "release", "machine"}),
+    "compiler": frozenset({"command", "resolved_path", "version"}),
+    "linker": frozenset({"command", "resolved_path", "version"}),
+    "sdk": frozenset({"SDKROOT", "CONDA_BUILD_SYSROOT", "selected_path", "version"}),
+    "packages": frozenset({"numpy", "postpyc", "postyp"}),
+}
+SCHEMA_TOP_LEVEL_KEYS = frozenset({"schema_version", *SCHEMA_SECTIONS})
+
 
 def _resolve_tool(command):
     """Split a shell-style command string and resolve its first token, shell-free."""
@@ -132,10 +143,51 @@ def _build_provenance():
     }
 
 
+def _validate_provenance_schema(data):
+    if not isinstance(data, dict):
+        raise ValueError("document is not a JSON object")
+    if set(data.keys()) != SCHEMA_TOP_LEVEL_KEYS:
+        unexpected = sorted(set(data.keys()) ^ SCHEMA_TOP_LEVEL_KEYS)
+        raise ValueError(f"unexpected top-level keys: {unexpected}")
+    schema_version = data.get("schema_version")
+    if type(schema_version) is not int or schema_version != SCHEMA_VERSION:
+        raise ValueError(f"unsupported schema_version: {schema_version!r}")
+    for section, expected_keys in SCHEMA_SECTIONS.items():
+        value = data[section]
+        if not isinstance(value, dict):
+            raise ValueError(f"section {section!r} is not an object")
+        if set(value.keys()) != expected_keys:
+            raise ValueError(
+                f"section {section!r} has unexpected keys: {sorted(set(value.keys()) ^ expected_keys)}"
+            )
+        for key, leaf in value.items():
+            if leaf is not None and not isinstance(leaf, str):
+                raise ValueError(f"{section}.{key} must be a string or null")
+
+
+def _validate_command(path) -> int:
+    try:
+        with open(path) as f:
+            data = json.load(f)
+        _validate_provenance_schema(data)
+    except (OSError, ValueError) as exc:
+        print(f"FAILED: {path}: {exc}")
+        return 1
+    print(f"OK: {path}")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--output", required=True, help="Path to write the provenance JSON")
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("--output", help="Path to write the provenance JSON")
+    group.add_argument(
+        "--validate", help="Path to an existing provenance JSON file to validate"
+    )
     args = parser.parse_args()
+
+    if args.validate is not None:
+        return _validate_command(args.validate)
 
     provenance = _build_provenance()
     output_path = Path(args.output)

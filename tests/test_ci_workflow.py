@@ -106,6 +106,49 @@ def _action_pin_pattern(action, sha, comment):
     )
 
 
+def _external_uses_values(text):
+    """Every `uses:` value except local `./` actions: bare and named steps
+    (`- uses:` / `  uses:`) and job-level reusable workflows alike."""
+    values = re.findall(r"""^\s*(?:-\s+)?uses:\s*["']?([^\s"'#]+)""", text, re.MULTILINE)
+    return [value for value in values if not value.startswith("./")]
+
+
+def _unpinned_uses_values(values):
+    return [value for value in values if not re.fullmatch(r"[^@\s]+@[0-9a-f]{40}", value)]
+
+
+def test_every_external_action_is_pinned_to_a_full_commit_sha():
+    uses_values = _external_uses_values(_read_workflow())
+    assert uses_values, "expected at least one external GitHub Action"
+    unpinned = _unpinned_uses_values(uses_values)
+    assert not unpinned, f"expected every external action to use a full commit SHA, got {unpinned!r}"
+
+
+_UNPINNED_WORKFLOW_SAMPLE = """\
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Python
+        uses: actions/setup-python@v5
+      - name: Quoted
+        uses: "prefix-dev/setup-pixi@main"
+      - uses: ./.github/actions/local
+  reusable:
+    uses: octo-org/shared/.github/workflows/ci.yml@v1
+"""
+
+
+def test_pin_check_rejects_unpinned_named_step_and_reusable_workflow_uses():
+    values = _external_uses_values(_UNPINNED_WORKFLOW_SAMPLE)
+    assert _unpinned_uses_values(values) == [
+        "actions/setup-python@v5",
+        "prefix-dev/setup-pixi@main",
+        "octo-org/shared/.github/workflows/ci.yml@v1",
+    ]
+
+
 def _job_blocks(text):
     jobs_match = re.search(r"^jobs:\s*\n", text, re.MULTILINE)
     assert jobs_match, "expected a top-level `jobs:` section"
@@ -124,7 +167,10 @@ def test_checkout_action_is_pinned_to_reviewed_sha_with_version_comment():
     text = _read_workflow()
     pattern = _action_pin_pattern(CHECKOUT_ACTION, CHECKOUT_SHA, CHECKOUT_COMMENT)
     matches = pattern.findall(text)
-    assert len(matches) == 2, "expected both jobs to pin actions/checkout to the reviewed SHA"
+    assert len(matches) == 4, (
+        "expected four pinned actions/checkout steps: one each in `interpreted` and `locked`, "
+        "plus two in `postpython-main` (own repo and openteams-ai/postpython)"
+    )
 
 
 def test_setup_python_action_is_pinned_to_reviewed_sha_with_version_comment():
@@ -149,18 +195,18 @@ def test_both_checkout_steps_disable_persist_credentials():
     text = _read_workflow()
     pattern = _action_pin_pattern(CHECKOUT_ACTION, CHECKOUT_SHA, CHECKOUT_COMMENT)
     matches = list(pattern.finditer(text))
-    assert len(matches) == 2, "expected exactly two pinned checkout steps"
+    assert len(matches) == 4, "expected exactly four pinned checkout steps"
     for match in matches:
         following = text[match.end() : match.end() + 200]
         assert re.search(r"persist-credentials:\s*false", following), (
-            "expected persist-credentials: false immediately following each checkout step"
+            "expected persist-credentials: false following each checkout step"
         )
 
 
-def test_both_jobs_declare_timeout_minutes():
+def test_all_jobs_declare_timeout_minutes():
     text = _read_workflow()
     blocks = _job_blocks(text)
-    assert len(blocks) == 2, "expected exactly two jobs (interpreted, locked)"
+    assert len(blocks) == 3, "expected exactly three jobs (interpreted, locked, postpython-main)"
     for block in blocks:
         assert re.search(r"timeout-minutes:\s*\d+", block), "expected timeout-minutes on every job"
 
@@ -182,11 +228,13 @@ def _job_steps(block):
 
 def test_locked_job_provenance_lifecycle_order_and_upload_contract():
     """Five consecutive steps must run, in order: generate provenance under
-    the locked pixi env, validate the resulting JSON under the same locked
-    env (not the runner's system Python), upload it only after successful
-    validation (never `if: always()`, so invalid/partial provenance can
-    never be published), then build the distribution, then run the test
-    suite under the same locked pixi env."""
+    the locked pixi env, validate the resulting JSON via this script's own
+    `--validate` mode under the same locked env (not the runner's system
+    Python, and not merely `json.tool`, which only checks JSON syntax and
+    not the provenance schema), upload it only after successful validation
+    (never `if: always()`, so invalid/partial provenance can never be
+    published), then build the distribution, then run the test suite under
+    the same locked pixi env."""
     text = _read_workflow()
     steps = _job_steps(_named_job_block(text, "locked"))
 
@@ -203,11 +251,11 @@ def test_locked_job_provenance_lifecycle_order_and_upload_contract():
 
     assert (
         validate_step.lstrip().splitlines()[0]
-        == "- run: pixi run --locked python -m json.tool dist/provenance.json"
+        == "- run: pixi run --locked python scripts/compiler_provenance.py --validate dist/provenance.json"
     ), (
         "expected the step immediately after provenance generation to validate the JSON "
-        "via `pixi run --locked python -m json.tool dist/provenance.json`, not the runner's "
-        "system Python"
+        "via `pixi run --locked python scripts/compiler_provenance.py --validate "
+        "dist/provenance.json`, not the runner's system Python and not `json.tool`"
     )
 
     upload_uses_line = f"- uses: {UPLOAD_ARTIFACT_ACTION}@{UPLOAD_ARTIFACT_SHA} # {UPLOAD_ARTIFACT_COMMENT}"
@@ -235,4 +283,66 @@ def test_locked_job_provenance_lifecycle_order_and_upload_contract():
         "expected the upload step to contain exactly the pinned `uses:` line, `with:`, "
         "`name: compiler-provenance`, `path: dist/provenance.json`, `if-no-files-found: error`, "
         f"and `retention-days: 14` (and nothing else, e.g. no `if: always()`), got {upload_lines!r}"
+    )
+
+
+# Compatibility contract for testing against the current PostPython main branch.
+
+POSTPYTHON_MAIN_JOB = "postpython-main"
+
+REPO_CHECKOUT_LINES = [
+    f"- uses: {CHECKOUT_ACTION}@{CHECKOUT_SHA} # {CHECKOUT_COMMENT}",
+    "with:",
+    "persist-credentials: false",
+]
+
+POSTPYTHON_CHECKOUT_LINES = [
+    f"- uses: {CHECKOUT_ACTION}@{CHECKOUT_SHA} # {CHECKOUT_COMMENT}",
+    "with:",
+    "repository: openteams-ai/postpython",
+    "ref: main",
+    "path: postpython",
+    "persist-credentials: false",
+]
+
+SETUP_PYTHON_312_LINES = [
+    f"- uses: {SETUP_PYTHON_ACTION}@{SETUP_PYTHON_SHA} # {SETUP_PYTHON_COMMENT}",
+    "with:",
+    'python-version: "3.12"',
+]
+
+
+def test_postpython_main_job_checks_out_main_and_runs_suite():
+    """`postpython-main` must run on ubuntu-latest with a declared timeout,
+    then execute this exact ordered step sequence: checkout this repo,
+    checkout openteams-ai/postpython at `main`, set up pinned Python 3.12,
+    upgrade pip, install the three editable packages in one pinned command,
+    then run the test suite."""
+    text = _read_workflow()
+    block = _named_job_block(text, POSTPYTHON_MAIN_JOB)
+
+    assert re.search(r"runs-on:\s*ubuntu-latest", block), (
+        f"expected `{POSTPYTHON_MAIN_JOB}` to run on ubuntu-latest"
+    )
+    assert re.search(r"timeout-minutes:\s*\d+", block), (
+        f"expected `{POSTPYTHON_MAIN_JOB}` to declare timeout-minutes"
+    )
+
+    steps = _job_steps(block)
+    normalized_steps = [
+        [line.strip() for line in step.splitlines() if line.strip()] for step in steps
+    ]
+
+    expected_steps = [
+        REPO_CHECKOUT_LINES,
+        POSTPYTHON_CHECKOUT_LINES,
+        SETUP_PYTHON_312_LINES,
+        ["- run: python -m pip install --upgrade pip"],
+        ["- run: python -m pip install -e ./postpython/postyp-dist -e ./postpython -e .[dev]"],
+        ["- run: pytest tests"],
+    ]
+
+    assert normalized_steps == expected_steps, (
+        f"expected `{POSTPYTHON_MAIN_JOB}` to run this exact ordered step sequence: "
+        f"{expected_steps!r}, got {normalized_steps!r}"
     )

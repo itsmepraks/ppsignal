@@ -158,6 +158,10 @@ def test_pixi_tasks_cover_test_and_build_workflows():
         assert isinstance(task["description"], str) and task["description"]
 
 
+def test_roadmap_file_exists_at_repo_root():
+    assert (ROOT / "ROADMAP.md").is_file()
+
+
 def test_built_wheel_and_sdist_contain_expected_files_and_no_native_binaries(tmp_path):
     result = subprocess.run(
         [sys.executable, "-m", "build", "--no-isolation", "--outdir", str(tmp_path)],
@@ -195,6 +199,8 @@ def test_built_wheel_and_sdist_contain_expected_files_and_no_native_binaries(tmp
 
     for script in ("scripts/build_native.py", "scripts/build_ext.py"):
         assert any(n.endswith(script) for n in sdist_names), script
+
+    assert any(n.endswith("ROADMAP.md") for n in sdist_names), "ROADMAP.md"
 
     test_files = sorted(p.name for p in (ROOT / "tests").glob("*.py"))
     assert test_files, "expected current test files to exist"

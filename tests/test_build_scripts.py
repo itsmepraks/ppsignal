@@ -4,6 +4,7 @@ import ctypes
 import importlib.util
 import json
 import os
+import platform
 import shutil
 import subprocess
 import sys
@@ -146,6 +147,52 @@ def test_build_ext_produces_ufunc_extension(tmp_path):
     result_empty = identity(empty)
     np.testing.assert_array_equal(result_empty, empty)
     assert not np.shares_memory(result_empty, empty)
+
+
+@pytest.mark.skipif(not _has_c_compiler(), reason="no C compiler available locally")
+def test_cli_build_prefix_produces_libpp_layout(tmp_path):
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "postpyc.cli",
+            "build",
+            str(ROOT / "ppsignal" / "_compiler_probe.py"),
+            "--prefix",
+            str(tmp_path),
+            "--module-name",
+            "ppsignal",
+        ],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        timeout=180,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+    lib_suffix = ".dylib" if platform.system() == "Darwin" else ".so"
+    lib_path = tmp_path / "lib" / f"libppsignal{lib_suffix}"
+    header_path = tmp_path / "include" / "ppsignal.h"
+    manifest_path = tmp_path / "share" / "postpyc" / "ppsignal.json"
+    assert lib_path.exists(), f"missing {lib_path}"
+    assert header_path.exists(), f"missing {header_path}"
+    assert manifest_path.exists(), f"missing {manifest_path}"
+
+    manifest = json.loads(manifest_path.read_text())
+    assert manifest["post_abi"] == 1
+    assert manifest["artifact"] == "ppsignal"
+
+    exports = manifest["exports"]
+    identity_export = next((e for e in exports if e["name"] == "identity"), None)
+    assert identity_export is not None, f"no 'identity' export in manifest exports: {exports!r}"
+    assert identity_export["c_symbol"] == "pp_identity"
+    assert identity_export["ufunc"]["signature"] == "(n)->(n)"
+
+    assert "pp_identity" in header_path.read_text()
+
+    values = [-2.5, 0.0, 3.25, 10.0]
+    assert _call_pp_identity(lib_path, values) == values
+    assert _call_pp_identity(lib_path, []) == []
 
 
 @pytest.mark.parametrize("script", [BUILD_NATIVE, BUILD_EXT], ids=["build_native", "build_ext"])

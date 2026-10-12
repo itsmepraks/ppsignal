@@ -8,8 +8,12 @@ fully-typed Python that runs under the standard CPython interpreter **and**
 compiles ahead-of-time to native code (a plain C shared library and a NumPy
 ufunc extension module) with the POST Python reference compiler.
 
-Status: **Planning** — this repository is scaffolding, ready for an agent or
-contributor to claim. It is part of the
+Status: **Pre-alpha foundation** — no public `scipy.signal` functions yet.
+The repository provides packaging, a pixi developer environment, and an
+internal compiler probe with tests for its interpreted and compiled build
+paths. Runtime dependencies are `numpy`,
+`postpyc>=0.3.0`, and `postyp>=0.3.0`; `scipy` is not a dependency. See
+[ROADMAP.md](ROADMAP.md) for targets and status. It is part of the
 [PostSciPy effort](https://github.com/openteams-ai/postpython/blob/main/postscipy-roadmap.md)
 to rebuild SciPy one subpackage at a time as the compiler's proving ground.
 
@@ -20,11 +24,12 @@ Primary compiler pressure this package generates: recurrence gufuncs, window ker
 1. Read the [POST Python spec](https://github.com/openteams-ai/postpython/blob/main/docs/spec.md)
    and the [PostSciPy roadmap](https://github.com/openteams-ai/postpython/blob/main/postscipy-roadmap.md)
    (package map, working rules, capability matrix).
-2. Copy the layout of [ppspecial](https://github.com/openteams-ai/ppspecial),
-   the exemplar package: `ppsignal/` sources, `tests/`,
-   `scripts/build_native.py`, `scripts/build_ext.py`, a pixi workspace with
-   `test` / `build-native` / `build-ext` tasks, a git dependency on
-   postpython, and a `ROADMAP.md` tracking targets and upstream requests.
+2. Set up the environment with `pixi install`, then use `pixi run test`,
+   `pixi run build-native`, `pixi run build-ext`, and
+   `pixi run build-prefix`. The layout follows
+   [ppspecial](https://github.com/openteams-ai/ppspecial), the exemplar
+   package. Published sdists and wheels are pure Python source; native
+   builds happen only when you run these tasks.
 3. Start with a slice from "Compiles today" below; land it as a small PR with
    tests in both execution modes.
 
